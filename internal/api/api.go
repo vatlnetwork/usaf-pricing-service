@@ -29,10 +29,14 @@ type API struct {
 func NewHandler(programs store.VendorPrograms, timeout time.Duration, logger *slog.Logger) http.Handler {
 	a := &API{programs: programs, timeout: timeout, logger: logger}
 	mux := http.NewServeMux()
+	registerUI(mux)
 	mux.HandleFunc("POST /products/dealer-prices", a.handle(a.dealerPrices))
+	mux.HandleFunc("POST /vendor-programs/preview", a.handle(a.previewOrder))
+	mux.HandleFunc("POST /vendor-programs/{id}/price-order", a.handle(a.priceOrder))
 	mux.HandleFunc("POST /vendor-programs", a.handle(a.create))
 	mux.HandleFunc("GET /vendor-programs", a.handle(a.list))
 	mux.HandleFunc("GET /vendor-programs/{id}", a.handle(a.get))
+	mux.HandleFunc("PUT /vendor-programs/{id}", a.handle(a.replace))
 	mux.HandleFunc("DELETE /vendor-programs/{id}", a.handle(a.delete))
 	mux.HandleFunc("PUT /vendor-programs/{id}/expiry", a.handle(a.updateExpiry))
 	mux.HandleFunc("PUT /vendor-programs/{id}/quote-enabled", a.handle(a.updateQuoteEnabled))
@@ -130,20 +134,27 @@ func bodyError(err error) error {
 	return badRequest(fmt.Sprintf("invalid JSON request body: %v", err))
 }
 
+type programInput struct {
+	Scenarios             []domain.PricingScenario      `json:"scenarios"`
+	SelectionPolicy       string                        `json:"selection_policy"`
+	Vendor                string                        `json:"vendor"`
+	QuoteEnabled          bool                          `json:"quote_enabled"`
+	DiscountOptions       []domain.DiscountOption       `json:"discount_options"`
+	ProductOverrides      []domain.ProductOverride      `json:"product_overrides"`
+	ProductGroupOverrides []domain.ProductGroupOverride `json:"product_group_overrides"`
+	ExpiresAt             *time.Time                    `json:"expires_at"`
+}
+
 func (a *API) create(w http.ResponseWriter, r *http.Request) error {
-	body, err := decodeBody[struct {
-		Vendor                string                        `json:"vendor"`
-		QuoteEnabled          bool                          `json:"quote_enabled"`
-		DiscountOptions       []domain.DiscountOption       `json:"discount_options"`
-		ProductOverrides      []domain.ProductOverride      `json:"product_overrides"`
-		ProductGroupOverrides []domain.ProductGroupOverride `json:"product_group_overrides"`
-		ExpiresAt             *time.Time                    `json:"expires_at"`
-	}](w, r)
+	body, err := decodeBody[programInput](w, r)
 	if err != nil {
 		return err
 	}
 	program, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides, body.ProductGroupOverrides)
 	if err != nil {
+		return badRequest(err.Error())
+	}
+	if err := program.UpdateScenarios(body.Scenarios, body.SelectionPolicy); err != nil {
 		return badRequest(err.Error())
 	}
 	program.UpdateQuoteEnabled(body.QuoteEnabled)
@@ -155,6 +166,44 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Location", "/vendor-programs/"+program.Id)
 	writeJSON(w, http.StatusCreated, program)
+	return nil
+}
+
+// replace saves a complete editor draft in one persistence operation. The
+// optional version also protects against edits made since the form was loaded.
+func (a *API) replace(w http.ResponseWriter, r *http.Request) error {
+	body, err := decodeBody[struct {
+		programInput
+		ExpectedUpdatedAt *time.Time `json:"expected_updated_at"`
+	}](w, r)
+	if err != nil {
+		return err
+	}
+	candidate, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides, body.ProductGroupOverrides)
+	if err != nil {
+		return badRequest(err.Error())
+	}
+	if err := candidate.UpdateScenarios(body.Scenarios, body.SelectionPolicy); err != nil {
+		return badRequest(err.Error())
+	}
+	candidate.UpdateQuoteEnabled(body.QuoteEnabled)
+	candidate.UpdateExpiry(body.ExpiresAt)
+	program, err := a.programs.Update(r.Context(), r.PathValue("id"), func(current *domain.VendorProgram) error {
+		if body.ExpectedUpdatedAt != nil && !current.UpdatedAt.Truncate(time.Millisecond).Equal(body.ExpectedUpdatedAt.Truncate(time.Millisecond)) {
+			return store.ErrConflict
+		}
+		candidate.Id, candidate.CreatedAt = current.Id, current.CreatedAt
+		candidate.UpdatedAt = time.Now().UTC().Truncate(time.Millisecond)
+		if !candidate.UpdatedAt.After(current.UpdatedAt) {
+			candidate.UpdatedAt = current.UpdatedAt.Truncate(time.Millisecond).Add(time.Millisecond)
+		}
+		*current = *candidate
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, program)
 	return nil
 }
 

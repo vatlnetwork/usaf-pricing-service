@@ -1,0 +1,432 @@
+[
+  {
+    "id": "atosa",
+    "name": "Atosa \u00b7 warehouse pickup",
+    "description": "Change fulfillment to shipment to see the pickup rule stop qualifying.",
+    "expected_total": 465.5,
+    "program": {
+      "vendor": "Atosa",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "pickup",
+          "name": "Warehouse pickup",
+          "program": "regular",
+          "role": "price",
+          "method": "steps",
+          "starting_price": "list",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [
+            {
+              "field": "fulfillment",
+              "operator": "=",
+              "value": "pickup"
+            }
+          ],
+          "adjustments": [
+            {
+              "type": "percentage",
+              "amount": 50
+            },
+            {
+              "type": "percentage",
+              "amount": 5
+            },
+            {
+              "type": "percentage",
+              "amount": 2
+            }
+          ],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing"
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "unit",
+          "product_id": "ATOSA-DEMO",
+          "quantity": 1,
+          "price_unit": "each",
+          "list_price": 1000
+        }
+      ]
+    }
+  },
+  {
+    "id": "bk",
+    "name": "BK \u00b7 online purchase",
+    "description": "Sequential discounts with an online-order condition and checkout instructions.",
+    "expected_total": 414.68,
+    "program": {
+      "vendor": "BK Resources",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "online",
+          "name": "Online purchase",
+          "program": "regular",
+          "role": "price",
+          "method": "steps",
+          "starting_price": "list",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [
+            {
+              "field": "channel",
+              "operator": "=",
+              "value": "online"
+            }
+          ],
+          "adjustments": [
+            {
+              "type": "percentage",
+              "amount": 50
+            },
+            {
+              "type": "percentage",
+              "amount": 10
+            },
+            {
+              "type": "percentage",
+              "amount": 3
+            },
+            {
+              "type": "percentage",
+              "amount": 5
+            }
+          ],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "promo_code": "SAVEBK5",
+          "instruction": "Apply code in cart before checkout"
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "unit",
+          "product_id": "BK-DEMO",
+          "quantity": 1,
+          "price_unit": "each",
+          "list_price": 1000
+        }
+      ]
+    }
+  },
+  {
+    "id": "quantum",
+    "name": "Quantum \u00b7 order-dollar tier",
+    "description": "Subtotal is computed from order lines. Change quantity to 2 or 20 to test both tier boundaries.",
+    "expected_total": 2625,
+    "program": {
+      "vendor": "Quantum",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "tier",
+          "name": "Order subtotal $3,000 to under $20,000",
+          "program": "regular",
+          "role": "price",
+          "method": "steps",
+          "starting_price": "list",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [
+            {
+              "field": "eligible_subtotal",
+              "operator": ">=",
+              "value": "3000"
+            },
+            {
+              "field": "eligible_subtotal",
+              "operator": "<",
+              "value": "20000"
+            }
+          ],
+          "adjustments": [
+            {
+              "type": "percentage",
+              "amount": 50
+            },
+            {
+              "type": "percentage",
+              "amount": 30
+            },
+            {
+              "type": "percentage",
+              "amount": 25
+            }
+          ],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing"
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "order",
+          "product_id": "QUANTUM-DEMO",
+          "quantity": 10,
+          "price_unit": "each",
+          "list_price": 1000
+        }
+      ]
+    }
+  },
+  {
+    "id": "globe",
+    "name": "Globe \u00b7 capped slicer discount",
+    "description": "The number of Slicers determines the discount across eligible products, capped at 10%.",
+    "expected_total": 9700,
+    "program": {
+      "vendor": "Globe",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "slicers",
+          "name": "Slicer-count promotion",
+          "program": "regular",
+          "role": "price",
+          "method": "count",
+          "starting_price": "list",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [],
+          "adjustments": [],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "percent_per_unit": 1,
+          "maximum_percent": 10,
+          "count_scope": {
+            "group_names": [
+              "Slicers"
+            ]
+          }
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "slicers",
+          "product_id": "SLICER-DEMO",
+          "quantity": 3,
+          "price_unit": "each",
+          "list_price": 1000,
+          "group_name": "Slicers"
+        },
+        {
+          "line_id": "other",
+          "product_id": "OTHER-DEMO",
+          "quantity": 7,
+          "price_unit": "each",
+          "list_price": 1000
+        }
+      ]
+    }
+  },
+  {
+    "id": "dormont",
+    "name": "Dormont \u00b7 adjustment on net",
+    "description": "An illustrative $1,000 special net receives the approved 10% adjustment at 70 units. Turn off approval to test the gate.",
+    "expected_total": 63000,
+    "program": {
+      "vendor": "Dormont",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "special-net",
+          "name": "Verified special net",
+          "program": "regular",
+          "role": "price",
+          "method": "fixed",
+          "starting_price": "list",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [],
+          "adjustments": [],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "combination": "compatible",
+          "compatible_scenario_ids": [
+            "pallet"
+          ],
+          "fixed_price": 1000
+        },
+        {
+          "id": "pallet",
+          "name": "70-kit pallet adjustment",
+          "program": "special",
+          "role": "adjustment",
+          "method": "steps",
+          "starting_price": "rule",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [
+            {
+              "field": "eligible_quantity",
+              "operator": ">=",
+              "value": "70"
+            }
+          ],
+          "adjustments": [
+            {
+              "type": "percentage",
+              "amount": 10
+            }
+          ],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "base_scenario_id": "special-net",
+          "promo_code": "DMPAL10"
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "kits",
+          "product_id": "KIT-DEMO",
+          "quantity": 70,
+          "price_unit": "each",
+          "list_price": 1000
+        }
+      ],
+      "selected_scenario_ids": [
+        "pallet"
+      ]
+    }
+  },
+  {
+    "id": "bundle",
+    "name": "Robot Coupe \u00b7 exact bundle",
+    "description": "Exactly five processors and five bowl kits cost $6,647 together. Change either quantity to reject the bundle.",
+    "expected_total": 6647,
+    "program": {
+      "vendor": "Robot Coupe",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "five-unit-bundle",
+          "name": "Five units with bowl kits",
+          "program": "special",
+          "role": "price",
+          "method": "bundle",
+          "starting_price": "list",
+          "price_unit": "bundle",
+          "scope": {},
+          "conditions": [],
+          "adjustments": [],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "fixed_price": 6647,
+          "combination": "exclusive",
+          "promo_code": "555",
+          "bundle_components": [
+            {
+              "product_id": "R2FIVE",
+              "quantity": 5
+            },
+            {
+              "product_id": "BOWL-KIT",
+              "quantity": 5
+            }
+          ]
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "processors",
+          "product_id": "R2FIVE",
+          "quantity": 5,
+          "price_unit": "each",
+          "list_price": 1000
+        },
+        {
+          "line_id": "bowls",
+          "product_id": "BOWL-KIT",
+          "quantity": 5,
+          "price_unit": "each",
+          "list_price": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "free",
+    "name": "Pitco \u00b7 mixed-price free goods",
+    "description": "Exactly 13 fryers at verified net prices. The lowest-priced eligible unit is credited; repeat groups are not assumed.",
+    "expected_total": 12000,
+    "program": {
+      "vendor": "Pitco",
+      "selection_policy": "lowest_price",
+      "scenarios": [
+        {
+          "id": "buy12get1",
+          "name": "Buy 12, get one free",
+          "program": "special",
+          "role": "price",
+          "method": "free",
+          "starting_price": "net",
+          "price_unit": "each",
+          "scope": {},
+          "conditions": [],
+          "adjustments": [],
+          "approved": true,
+          "source": "Tutorial example \u2014 illustrative pricing",
+          "buy_quantity": 12,
+          "free_quantity": 1,
+          "combination": "exclusive"
+        }
+      ]
+    },
+    "order": {
+      "at": "2026-10-08T18:00:00Z",
+      "fulfillment": "pickup",
+      "channel": "online",
+      "lines": [
+        {
+          "line_id": "regular",
+          "product_id": "FRYER-A",
+          "quantity": 12,
+          "price_unit": "each",
+          "list_price": 1000,
+          "net_price": 1000
+        },
+        {
+          "line_id": "lowest",
+          "product_id": "FRYER-B",
+          "quantity": 1,
+          "price_unit": "each",
+          "list_price": 800,
+          "net_price": 800
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Test vendor programs · USAF Pricing</title><link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/scenarios.css"><script src="/assets/scenarios.js" defer></script><script src="/assets/test.js" defer></script></head>
+<body>
+<header class="app-header"><a href="/" class="brand"><span class="brand-mark">U</span> USAF <span>Pricing workspace</span></a><nav><a href="/">Manage programs</a><a href="/test" aria-current="page">Test pricing</a></nav></header>
+<main class="test-main">
+<div class="test-heading"><div><p class="eyebrow">ORDER PRICING LAB</p><h1>Test vendor programs</h1><p class="muted">Try an order, inspect its price, and see which rules qualify.</p></div></div>
+<div id="test-message" role="status" aria-live="polite" hidden></div>
+<section class="panel"><div class="scenario-grid"><label>Saved vendor program<select id="saved-program"><option value="">Select a saved program…</option></select></label><label>Try a tutorial example<select id="example"><option value="">Select an example…</option></select></label></div><div class="test-actions"><button type="button" id="more-programs">Load more programs</button><button type="button" id="reload-programs">Refresh programs</button></div><p id="program-description" class="help">Choose a program or example to begin. Examples and draft changes are temporary.</p></section>
+<form id="test-form" hidden>
+<div class="test-layout"><div>
+<section class="panel"><h3>Purchase situation</h3><div id="order-context"></div><details class="scenario-details"><summary>Additional order attributes</summary><p class="help">Enter one name=value per line, such as stock_verified=true or member=ALIGNITY. These are checked only by rules that require them.</p><label>Order attributes<textarea id="order-attributes" placeholder="stock_verified=true"></textarea></label></details></section>
+<section class="panel"><div class="section-heading"><h3>Order lines</h3><button type="button" id="add-line">+ Add product</button></div><p class="help">Prices and quantities use the selected unit. Use separate line IDs for different configurations of one product. All lines belong to the selected vendor program.</p><div id="order-lines"></div></section>
+<section class="panel"><h3>Scenario selection</h3><p class="help">Leave everything unchecked to select automatically. Otherwise, each checked rule must be used and cover the order without overlap. Base dependencies are included automatically.</p><div id="selected-scenarios"></div></section>
+<details class="panel"><summary>Edit rules for this test</summary><p class="help">Changes affect only this preview. Save permanent changes in the program editor.</p><div id="test-scenarios"></div></details>
+<div class="test-actions"><button type="submit" class="primary" id="calculate">Calculate order price</button></div>
+</div><section id="test-results" class="panel test-results" aria-live="polite"><p class="eyebrow">PRICING RESULT</p><p>Add an order and calculate its price.</p></section></div>
+</form>
+</main></body></html>

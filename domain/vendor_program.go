@@ -19,6 +19,8 @@ type VendorProgram struct {
 	ExpiresAt             *time.Time             `json:"expires_at" bson:"expires_at,omitempty"`
 	CreatedAt             time.Time              `json:"created_at" bson:"created_at"`
 	UpdatedAt             time.Time              `json:"updated_at" bson:"updated_at"`
+	Scenarios             []PricingScenario      `json:"scenarios" bson:"scenarios,omitempty"`
+	SelectionPolicy       string                 `json:"selection_policy" bson:"selection_policy,omitempty"`
 }
 
 var ErrVendorProgramExpired = errors.New("vendor program has expired")

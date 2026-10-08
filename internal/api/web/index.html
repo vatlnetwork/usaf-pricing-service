@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendor programs · USAF Pricing</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/scenarios.css">
+  <script src="/assets/scenarios.js" defer></script>
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header"><a href="/" class="brand"><span class="brand-mark">U</span> USAF <span>Pricing workspace</span></a><nav><a href="/test">Test vendor programs</a></nav></header>
+  <div class="workspace">
+    <aside aria-label="Vendor programs">
+      <div class="aside-heading"><div><p class="eyebrow">DIRECTORY</p><h1>Vendor programs</h1></div><button id="refresh" class="quiet" aria-label="Refresh program list">↻</button></div>
+      <button id="new-program" class="primary wide">+ New program</button>
+      <label class="search-label">Search loaded programs<input id="search" type="search" placeholder="Search vendor or ID…"></label>
+      <p id="list-status" class="muted" role="status"></p>
+      <nav id="program-list" aria-label="Select a vendor program"></nav>
+      <button id="load-more" class="wide" hidden>Load more programs</button>
+    </aside>
+    <main>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="welcome" class="welcome"><p class="eyebrow">PROGRAM WORKSPACE</p><h2>Every discount, in its place.</h2><p>Select a vendor program to review its pricing rules, or create a new one.</p><div class="scope-guide"><span>01 · Vendor</span><span>02 · Product group</span><span>03 · Product</span></div><p class="muted">Keep shared discounts at the vendor level and add specific overrides where needed.</p></section>
+      <form id="editor" hidden>
+        <div class="editor-header"><div><p class="eyebrow" id="editor-label">PROGRAM DETAILS</p><h2 id="editor-title">New program</h2><p id="metadata" class="muted"></p></div><span id="save-state" class="badge">Draft</span></div>
+        <fieldset id="editor-fields">
+          <section class="panel details"><div class="section-heading"><h3>Program details</h3><span id="expiry-status" class="badge"></span></div><div class="field-grid"><label>Vendor name<input id="vendor" required placeholder="e.g. Example Vendor" autocomplete="off"></label><label>Expires at <span class="optional">(local time)</span><input id="expiry" type="datetime-local" step="0.001"><span class="help">Leave blank for no expiry. Expired programs can still be edited.</span></label></div></section>
+          <section class="panel"><h3>Purchase pricing scenarios</h3><p class="muted">Order-aware rules for eligibility, tiers, net prices, bundles, and approved combinations. Used by order pricing; existing product pricing stays separate.</p><div id="scenarios"></div><button type="button" id="test-draft">Test this draft</button></section>
+          <div class="precedence"><strong>How scopes work</strong><p>Options with the same name are replaced in this order: <b>vendor → product group → product</b>. Other options remain available. Names match exactly, including case and spaces.</p></div>
+          <section class="panel scope vendor-scope" aria-labelledby="vendor-heading"><div class="section-heading"><div><p class="eyebrow">01 / BASE DISCOUNTS</p><h3 id="vendor-heading">Vendor-wide options</h3></div><span class="scope-badge">All products</span></div><p class="muted">Shared options available to every product from this vendor.</p><label class="check"><input id="vendor-quote" type="checkbox"> Allow quote pricing for all products</label><div id="vendor-options"></div></section>
+          <section class="panel scope group-scope" aria-labelledby="group-heading"><div class="section-heading"><div><p class="eyebrow">02 / GROUP OVERRIDES</p><h3 id="group-heading">Product group options</h3></div><span class="scope-badge">Matching group</span></div><p class="muted">Add or replace named options for products in an exact product group.</p><div id="groups"></div><button type="button" id="add-group">+ Add product group</button></section>
+          <section class="panel scope product-scope" aria-labelledby="product-heading"><div class="section-heading"><div><p class="eyebrow">03 / PRODUCT OVERRIDES</p><h3 id="product-heading">Product-specific options</h3></div><span class="scope-badge">Matching product</span></div><p class="muted">The most specific discount scope. A positive fixed net price takes precedence over all discounts.</p><div id="products"></div><button type="button" id="add-product">+ Add product override</button></section>
+          <p class="help quote-help">Quote pricing is available if any matching scope allows it. Turning it off in one scope does not disable it in another. An accepted quote takes precedence over a fixed net price.</p>
+        </fieldset>
+        <footer class="actions"><button id="delete-program" type="button" class="danger" hidden>Delete program</button><div class="save-actions"><button id="discard" type="button">Discard changes</button><button id="save" type="submit" class="primary">Create program</button></div></footer>
+      </form>
+    </main>
+  </div>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><h2 id="confirm-title"></h2><p id="confirm-message"></p><div class="dialog-actions"><button id="confirm-cancel">Cancel</button><button id="confirm-accept" class="danger"></button></div></dialog>
+</body>
+</html>
