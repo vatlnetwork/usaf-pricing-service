@@ -1,0 +1,12 @@
+{
+  "server": {
+    "address": ":8080"
+  },
+  "mongodb": {
+    "uri": "mongodb://localhost:27017",
+    "database": "usaf_pricing",
+    "collection": "vendor_programs",
+    "connect_timeout_seconds": 10,
+    "operation_timeout_seconds": 5
+  }
+}
