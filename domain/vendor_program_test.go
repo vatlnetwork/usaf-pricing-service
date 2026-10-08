@@ -29,7 +29,7 @@ func TestUpsertProductOverridesFailurePreservesState(t *testing.T) {
 			// Spare capacity also exposes accidental writes beyond the stored length.
 			overrides := make([]ProductOverride, 1, 4)
 			overrides[0] = testOverride("a", "old")
-			v, err := NewVendorProgram("vendor", []DiscountOption{{Name: "base"}}, overrides)
+			v, err := NewVendorProgram("vendor", []DiscountOption{{Name: "base"}}, overrides, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -50,7 +50,7 @@ func TestUpsertProductOverridesFailurePreservesState(t *testing.T) {
 }
 
 func TestUpsertProductOverridesSuccess(t *testing.T) {
-	v, err := NewVendorProgram("vendor", []DiscountOption{{Name: "base"}}, []ProductOverride{testOverride("a", "old"), testOverride("c", "base")})
+	v, err := NewVendorProgram("vendor", []DiscountOption{{Name: "base"}}, []ProductOverride{testOverride("a", "old"), testOverride("c", "base")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestUpsertProductOverridesSuccess(t *testing.T) {
 }
 
 func TestNewVendorProgramRejectsDuplicateProductIDs(t *testing.T) {
-	_, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "first"), testOverride("a", "second")})
+	_, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "first"), testOverride("a", "second")}, nil)
 	if err == nil {
 		t.Fatal("expected duplicate product ID error")
 	}
@@ -121,7 +121,7 @@ func testDiscountOption(name string, amount float64) DiscountOption {
 func TestNewVendorProgramCopiesInputs(t *testing.T) {
 	options := []DiscountOption{testDiscountOption("base", 10)}
 	overrides := []ProductOverride{{ProductId: "a", DiscountOptions: []DiscountOption{testDiscountOption("extra", 20)}}}
-	v, err := NewVendorProgram("vendor", options, overrides)
+	v, err := NewVendorProgram("vendor", options, overrides, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestNewVendorProgramCopiesInputs(t *testing.T) {
 }
 
 func TestUpdateDiscountOptionsCopiesInput(t *testing.T) {
-	v, err := NewVendorProgram("vendor", nil, nil)
+	v, err := NewVendorProgram("vendor", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestUpdateDiscountOptionsCopiesInput(t *testing.T) {
 }
 
 func TestUpdateDiscountOptionsFailurePreservesState(t *testing.T) {
-	v, err := NewVendorProgram("vendor", []DiscountOption{testDiscountOption("base", 10)}, []ProductOverride{testOverride("a", "extra")})
+	v, err := NewVendorProgram("vendor", []DiscountOption{testDiscountOption("base", 10)}, []ProductOverride{testOverride("a", "extra")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestUpdateDiscountOptionsFailurePreservesState(t *testing.T) {
 }
 
 func TestUpsertProductOverridesCopiesInputs(t *testing.T) {
-	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "old")})
+	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "old")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestGetDiscountOptionsForProductAddsOnlyMatchingOptionsAndReturnsCopies(t *
 	v, err := NewVendorProgram("vendor", []DiscountOption{testDiscountOption("base", 10)}, []ProductOverride{
 		{ProductId: "a", DiscountOptions: []DiscountOption{testDiscountOption("extra-a", 20)}},
 		{ProductId: "b", DiscountOptions: []DiscountOption{testDiscountOption("extra-b", 30)}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestGetDiscountOptionsForProductAddsOnlyMatchingOptionsAndReturnsCopies(t *
 		{"without-override", []DiscountOption{testDiscountOption("base", 10)}},
 	} {
 		t.Run(tt.productID, func(t *testing.T) {
-			options := v.GetDiscountOptionsForProduct(tt.productID)
+			options := v.GetDiscountOptionsForProduct(tt.productID, "")
 			if !reflect.DeepEqual(options, tt.want) {
 				t.Fatalf("got %+v, want %+v", options, tt.want)
 			}
@@ -227,7 +227,7 @@ func TestGetDiscountOptionsForProductAddsOnlyMatchingOptionsAndReturnsCopies(t *
 				options[i].DiscountPath[0].Amount = -1
 				options[i].Name = "changed"
 			}
-			if got := v.GetDiscountOptionsForProduct(tt.productID); !reflect.DeepEqual(got, tt.want) {
+			if got := v.GetDiscountOptionsForProduct(tt.productID, ""); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("output mutation changed stored options: %+v", got)
 			}
 		})
@@ -248,7 +248,7 @@ func TestNewVendorProgramDiscountOptionNameScopes(t *testing.T) {
 		{"duplicate in later override", nil, []ProductOverride{testOverride("a", "same"), {ProductId: "b", DiscountOptions: []DiscountOption{{Name: "same"}, {Name: "same"}}}}, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewVendorProgram("vendor", tt.options, tt.overrides)
+			_, err := NewVendorProgram("vendor", tt.options, tt.overrides, nil)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("error = %v, want error = %v", err, tt.wantError)
 			}
@@ -257,7 +257,7 @@ func TestNewVendorProgramDiscountOptionNameScopes(t *testing.T) {
 }
 
 func TestUpdateDiscountOptionsAllowsOverrideNames(t *testing.T) {
-	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "shared"), testOverride("b", "shared")})
+	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "shared"), testOverride("b", "shared")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestGetDiscountOptionsForProductOverridePrecedence(t *testing.T) {
 		{ProductId: "b", DiscountOptions: []DiscountOption{testDiscountOption("shared", 40), testDiscountOption("extra", 50)}},
 		{ProductId: "empty-path", DiscountOptions: []DiscountOption{{Name: "shared"}}},
 		{ProductId: "empty-override"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestGetDiscountOptionsForProductOverridePrecedence(t *testing.T) {
 		{"without-override", base},
 	} {
 		t.Run(tt.productID, func(t *testing.T) {
-			got := v.GetDiscountOptionsForProduct(tt.productID)
+			got := v.GetDiscountOptionsForProduct(tt.productID, "")
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("got %+v, want %+v", got, tt.want)
 			}
@@ -302,13 +302,13 @@ func TestGetDiscountOptionsForProductOverridePrecedence(t *testing.T) {
 					got[i].DiscountPath[0].Amount = -1
 				}
 			}
-			if got := v.GetDiscountOptionsForProduct(tt.productID); !reflect.DeepEqual(got, tt.want) {
+			if got := v.GetDiscountOptionsForProduct(tt.productID, ""); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("output mutation changed stored options: %+v", got)
 			}
 		})
 	}
 	v.RemoveProductOverrides([]string{"a"})
-	if got := v.GetDiscountOptionsForProduct("a"); !reflect.DeepEqual(got, base) {
+	if got := v.GetDiscountOptionsForProduct("a", ""); !reflect.DeepEqual(got, base) {
 		t.Fatalf("removing override did not restore vendor options: %+v", got)
 	}
 }

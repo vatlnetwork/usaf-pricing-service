@@ -178,7 +178,7 @@ func TestMongoUpdateConflictAndRollbackIntegration(t *testing.T) {
 	db := integrationStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	program, err := domain.NewVendorProgram("ACME", nil, nil)
+	program, err := domain.NewVendorProgram("ACME", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestMongoPricingIntegration(t *testing.T) {
 		{ProductId: "overridden", DiscountOptions: []domain.DiscountOption{{Name: "standard", DiscountPath: []domain.DiscountPathItem{{Type: domain.DiscountPathItemTypePercentage, Amount: 20}}}}},
 		{ProductId: "disabled", DiscountOptions: []domain.DiscountOption{{Name: "standard"}}},
 		{ProductId: "a", DiscountOptions: []domain.DiscountOption{{Name: "extra", DiscountPath: []domain.DiscountPathItem{{Type: domain.DiscountPathItemTypePercentage, Amount: 50}}}}},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestMongoPricingIntegration(t *testing.T) {
 		}
 	}
 	// Creating a second program must produce an ambiguity error, not an arbitrary price.
-	duplicate, err := domain.NewVendorProgram("ACME", nil, nil)
+	duplicate, err := domain.NewVendorProgram("ACME", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

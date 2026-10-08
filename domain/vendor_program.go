@@ -10,12 +10,13 @@ import (
 )
 
 type VendorProgram struct {
-	Id               string            `json:"id" bson:"-"`
-	Vendor           string            `json:"vendor" bson:"vendor"` // name of the vendor
-	DiscountOptions  []DiscountOption  `json:"discount_options" bson:"discount_options"`
-	ProductOverrides []ProductOverride `json:"product_overrides" bson:"product_overrides"`
-	CreatedAt        time.Time         `json:"created_at" bson:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at" bson:"updated_at"`
+	Id                    string                 `json:"id" bson:"-"`
+	Vendor                string                 `json:"vendor" bson:"vendor"` // name of the vendor
+	DiscountOptions       []DiscountOption       `json:"discount_options" bson:"discount_options"`
+	ProductOverrides      []ProductOverride      `json:"product_overrides" bson:"product_overrides"`
+	ProductGroupOverrides []ProductGroupOverride `json:"product_group_overrides" bson:"product_group_overrides"`
+	CreatedAt             time.Time              `json:"created_at" bson:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at" bson:"updated_at"`
 }
 
 type DiscountOption struct {
@@ -106,10 +107,31 @@ func (p ProductOverride) Validate() error {
 	return validateDiscountOptionNames(p.DiscountOptions)
 }
 
+type ProductGroupOverride struct {
+	GroupName       string           `json:"group_name" bson:"group_name"`
+	DiscountOptions []DiscountOption `json:"discount_options" bson:"discount_options"`
+}
+
+func (p ProductGroupOverride) Validate() error {
+	if strings.TrimSpace(p.GroupName) == "" {
+		return errors.New("product group name is required")
+	}
+
+	for _, o := range p.DiscountOptions {
+		err := o.Validate()
+		if err != nil {
+			return err
+		}
+	}
+
+	return validateDiscountOptionNames(p.DiscountOptions)
+}
+
 func NewVendorProgram(
 	vendor string,
 	discountOptions []DiscountOption,
 	productOverrides []ProductOverride,
+	productGroupOverrides []ProductGroupOverride,
 ) (*VendorProgram, error) {
 	if strings.TrimSpace(vendor) == "" {
 		return nil, errors.New("vendor name is required")
@@ -138,13 +160,25 @@ func NewVendorProgram(
 		productIds = append(productIds, o.ProductId)
 	}
 
+	groupNames := make(map[string]struct{}, len(productGroupOverrides))
+	for _, override := range productGroupOverrides {
+		if err := override.Validate(); err != nil {
+			return nil, err
+		}
+		if _, exists := groupNames[override.GroupName]; exists {
+			return nil, fmt.Errorf("cannot have duplicate group names in product group overrides. found duplicate: %v", override.GroupName)
+		}
+		groupNames[override.GroupName] = struct{}{}
+	}
+
 	return &VendorProgram{
-		Id:               "", // id will be set by the database layer
-		Vendor:           vendor,
-		DiscountOptions:  cloneDiscountOptions(discountOptions),
-		ProductOverrides: cloneProductOverrides(productOverrides),
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
+		Id:                    "", // id will be set by the database layer
+		Vendor:                vendor,
+		DiscountOptions:       cloneDiscountOptions(discountOptions),
+		ProductOverrides:      cloneProductOverrides(productOverrides),
+		ProductGroupOverrides: cloneProductGroupOverrides(productGroupOverrides),
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
 	}, nil
 }
 
@@ -208,12 +242,56 @@ func (v *VendorProgram) UpsertProductOverrides(productOverrides []ProductOverrid
 	return nil
 }
 
+func (v *VendorProgram) UpsertProductGroupOverrides(productGroupOverrides []ProductGroupOverride) error {
+	// Stage changes in a separate slice so failures leave the program unchanged.
+	candidate := *v
+	candidate.ProductGroupOverrides = slices.Clone(v.ProductGroupOverrides)
+
+	for _, o := range productGroupOverrides {
+		err := o.Validate()
+		if err != nil {
+			return err
+		}
+
+		o.DiscountOptions = cloneDiscountOptions(o.DiscountOptions)
+		exists := false
+
+		for i, existing := range candidate.ProductGroupOverrides {
+			if existing.GroupName == o.GroupName {
+				candidate.ProductGroupOverrides[i] = o
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			candidate.ProductGroupOverrides = append(candidate.ProductGroupOverrides, o)
+		}
+	}
+
+	err := candidate.validateDiscountOptionUniqueness()
+	if err != nil {
+		return err
+	}
+
+	v.ProductGroupOverrides = candidate.ProductGroupOverrides
+	v.UpdatedAt = time.Now()
+
+	return nil
+}
+
 func (v *VendorProgram) validateDiscountOptionUniqueness() error {
 	if err := validateDiscountOptionNames(v.DiscountOptions); err != nil {
 		return err
 	}
 
 	for _, o := range v.ProductOverrides {
+		if err := validateDiscountOptionNames(o.DiscountOptions); err != nil {
+			return err
+		}
+	}
+
+	for _, o := range v.ProductGroupOverrides {
 		if err := validateDiscountOptionNames(o.DiscountOptions); err != nil {
 			return err
 		}
@@ -248,28 +326,57 @@ func (v *VendorProgram) RemoveProductOverrides(productIds []string) {
 	v.UpdatedAt = time.Now()
 }
 
-// GetDiscountOptionsForProduct returns independent copies of vendor options whose
-// names are not overridden, followed by the specified product's options.
-func (v *VendorProgram) GetDiscountOptionsForProduct(productId string) []DiscountOption {
-	productOptions := []DiscountOption{}
-	overriddenNames := make(map[string]struct{})
-	for _, override := range v.ProductOverrides {
-		if override.ProductId == productId {
-			productOptions = append(productOptions, override.DiscountOptions...)
-			for _, option := range override.DiscountOptions {
-				overriddenNames[option.Name] = struct{}{}
-			}
+func (v *VendorProgram) RemoveProductGroupOverrides(groupNames []string) {
+	newOverrides := []ProductGroupOverride{}
+
+	for _, o := range v.ProductGroupOverrides {
+		if slices.Contains(groupNames, o.GroupName) {
+			continue
+		} else {
+			newOverrides = append(newOverrides, o)
 		}
 	}
 
-	options := []DiscountOption{}
-	for _, option := range v.DiscountOptions {
+	v.ProductGroupOverrides = newOverrides
+	v.UpdatedAt = time.Now()
+}
+
+// GetDiscountOptionsForProduct returns independent copies of effective options
+// in vendor, group, then product order. Higher-priority scopes replace entire
+// options with matching names. An empty group name skips group overrides.
+func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string) []DiscountOption {
+	productOptions := []DiscountOption{}
+	for _, override := range v.ProductOverrides {
+		if override.ProductId == productId {
+			productOptions = append(productOptions, override.DiscountOptions...)
+		}
+	}
+	groupOptions := []DiscountOption{}
+	if groupName != "" {
+		for _, override := range v.ProductGroupOverrides {
+			if override.GroupName == groupName {
+				groupOptions = append(groupOptions, override.DiscountOptions...)
+			}
+		}
+	}
+	options := mergeDiscountOptions(v.DiscountOptions, groupOptions)
+	return cloneDiscountOptions(mergeDiscountOptions(options, productOptions))
+}
+
+// Preserve duplicates within a scope so pricing can still reject ambiguous
+// stored data; only matching names from the lower-priority scope are removed.
+func mergeDiscountOptions(base, overrides []DiscountOption) []DiscountOption {
+	overriddenNames := make(map[string]struct{}, len(overrides))
+	for _, option := range overrides {
+		overriddenNames[option.Name] = struct{}{}
+	}
+	options := make([]DiscountOption, 0, len(base)+len(overrides))
+	for _, option := range base {
 		if _, overridden := overriddenNames[option.Name]; !overridden {
 			options = append(options, option)
 		}
 	}
-	options = append(options, productOptions...)
-	return cloneDiscountOptions(options)
+	return append(options, overrides...)
 }
 
 func cloneDiscountOptions(options []DiscountOption) []DiscountOption {
@@ -281,6 +388,14 @@ func cloneDiscountOptions(options []DiscountOption) []DiscountOption {
 }
 
 func cloneProductOverrides(overrides []ProductOverride) []ProductOverride {
+	cloned := slices.Clone(overrides)
+	for i := range cloned {
+		cloned[i].DiscountOptions = cloneDiscountOptions(cloned[i].DiscountOptions)
+	}
+	return cloned
+}
+
+func cloneProductGroupOverrides(overrides []ProductGroupOverride) []ProductGroupOverride {
 	cloned := slices.Clone(overrides)
 	for i := range cloned {
 		cloned[i].DiscountOptions = cloneDiscountOptions(cloned[i].DiscountOptions)

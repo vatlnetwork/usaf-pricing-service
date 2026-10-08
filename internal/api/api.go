@@ -37,6 +37,8 @@ func NewHandler(programs store.VendorPrograms, timeout time.Duration, logger *sl
 	mux.HandleFunc("PUT /vendor-programs/{id}/discount-options", a.handle(a.updateDiscountOptions))
 	mux.HandleFunc("PATCH /vendor-programs/{id}/product-overrides", a.handle(a.upsertProductOverrides))
 	mux.HandleFunc("DELETE /vendor-programs/{id}/product-overrides", a.handle(a.removeProductOverrides))
+	mux.HandleFunc("PATCH /vendor-programs/{id}/product-group-overrides", a.handle(a.upsertProductGroupOverrides))
+	mux.HandleFunc("DELETE /vendor-programs/{id}/product-group-overrides", a.handle(a.removeProductGroupOverrides))
 	mux.HandleFunc("GET /vendor-programs/{id}/products/{productID}/discount-options", a.handle(a.getProductDiscountOptions))
 	return mux
 }
@@ -126,14 +128,15 @@ func bodyError(err error) error {
 
 func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	body, err := decodeBody[struct {
-		Vendor           string                   `json:"vendor"`
-		DiscountOptions  []domain.DiscountOption  `json:"discount_options"`
-		ProductOverrides []domain.ProductOverride `json:"product_overrides"`
+		Vendor                string                        `json:"vendor"`
+		DiscountOptions       []domain.DiscountOption       `json:"discount_options"`
+		ProductOverrides      []domain.ProductOverride      `json:"product_overrides"`
+		ProductGroupOverrides []domain.ProductGroupOverride `json:"product_group_overrides"`
 	}](w, r)
 	if err != nil {
 		return err
 	}
-	program, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides)
+	program, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides, body.ProductGroupOverrides)
 	if err != nil {
 		return badRequest(err.Error())
 	}
@@ -250,11 +253,47 @@ func (a *API) removeProductOverrides(w http.ResponseWriter, r *http.Request) err
 	})
 }
 
+func (a *API) upsertProductGroupOverrides(w http.ResponseWriter, r *http.Request) error {
+	body, err := decodeBody[struct {
+		ProductGroupOverrides *[]domain.ProductGroupOverride `json:"product_group_overrides"`
+	}](w, r)
+	if err != nil {
+		return err
+	}
+	if body.ProductGroupOverrides == nil {
+		return badRequest("product_group_overrides is required and must be an array")
+	}
+	return a.update(w, r, func(program *domain.VendorProgram) error {
+		return program.UpsertProductGroupOverrides(*body.ProductGroupOverrides)
+	})
+}
+
+func (a *API) removeProductGroupOverrides(w http.ResponseWriter, r *http.Request) error {
+	body, err := decodeBody[struct {
+		GroupNames *[]string `json:"group_names"`
+	}](w, r)
+	if err != nil {
+		return err
+	}
+	if body.GroupNames == nil {
+		return badRequest("group_names is required and must be an array")
+	}
+	for _, name := range *body.GroupNames {
+		if strings.TrimSpace(name) == "" {
+			return badRequest("group_names must not contain blank names")
+		}
+	}
+	return a.update(w, r, func(program *domain.VendorProgram) error {
+		program.RemoveProductGroupOverrides(*body.GroupNames)
+		return nil
+	})
+}
+
 func (a *API) getProductDiscountOptions(w http.ResponseWriter, r *http.Request) error {
 	program, err := a.programs.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, program.GetDiscountOptionsForProduct(r.PathValue("productID")))
+	writeJSON(w, http.StatusOK, program.GetDiscountOptionsForProduct(r.PathValue("productID"), r.URL.Query().Get("group_name")))
 	return nil
 }

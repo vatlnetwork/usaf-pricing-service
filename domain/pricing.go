@@ -27,7 +27,7 @@ func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 		return 0, errors.New("list price must be finite and nonnegative")
 	}
 	available := make(map[string]DiscountOption)
-	for _, option := range v.GetDiscountOptionsForProduct(product.ProductId) {
+	for _, option := range v.GetDiscountOptionsForProduct(product.ProductId, product.GroupName) {
 		if _, exists := available[option.Name]; exists {
 			return 0, fmt.Errorf("discount option %s is ambiguous", option.Name)
 		}

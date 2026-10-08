@@ -14,6 +14,7 @@ import (
 
 type priceProductRequest struct {
 	ProductID       string   `json:"productId"`
+	GroupName       string   `json:"groupName"`
 	Vendor          string   `json:"vendor"`
 	ListPrice       *float64 `json:"listPrice"`
 	DiscountOptions []string `json:"discountOptions"`
@@ -90,7 +91,7 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 		price, err := lookup.program.CalculateDealerPrice(domain.Product{
-			ProductId: input.ProductID, Vendor: input.Vendor, ListPrice: *input.ListPrice, DiscountOptions: input.DiscountOptions,
+			ProductId: input.ProductID, GroupName: input.GroupName, Vendor: input.Vendor, ListPrice: *input.ListPrice, DiscountOptions: input.DiscountOptions,
 		})
 		if err != nil {
 			results[input.ProductID] = unavailablePrice(err.Error())
