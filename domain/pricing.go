@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 // earlier discount would reduce the price to zero. Only the final price is
 // rounded, to the nearest cent (half cents round up).
 // A positive product net price is returned unchanged, ignoring selected options.
+// An eligible positive quote price takes precedence over net prices and discounts.
 func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	if v.IsExpired(time.Now()) {
 		return 0, ErrVendorProgramExpired
@@ -28,6 +30,18 @@ func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	if product.Vendor != v.Vendor {
 		return 0, errors.New("product vendor does not match vendor program")
 	}
+	if math.IsNaN(product.QuotePrice) || math.IsInf(product.QuotePrice, 0) {
+		return 0, errors.New("quote price must be finite")
+	}
+	quoteEnabled := v.SupportsQuotePricing(product.ProductId, product.GroupName)
+	if product.QuotePrice > 0 {
+		if quoteEnabled {
+			return product.QuotePrice, nil
+		}
+		if len(product.DiscountOptions) == 0 {
+			return 0, errors.New("quote pricing is not supported and no discount options were provided")
+		}
+	}
 	if math.IsNaN(product.ListPrice) || math.IsInf(product.ListPrice, 0) || product.ListPrice < 0 {
 		return 0, errors.New("list price must be finite and nonnegative")
 	}
@@ -37,6 +51,9 @@ func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	}
 	if netPrice > 0 {
 		return netPrice, nil
+	}
+	if quoteEnabled && slices.Contains(product.DiscountOptions, quotePriceOptionName) {
+		return 0, errors.New("a positive quote price is required for the quote price option")
 	}
 	available := make(map[string]DiscountOption)
 	for _, option := range v.GetDiscountOptionsForProduct(product.ProductId, product.GroupName) {

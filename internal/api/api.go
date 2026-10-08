@@ -35,6 +35,7 @@ func NewHandler(programs store.VendorPrograms, timeout time.Duration, logger *sl
 	mux.HandleFunc("GET /vendor-programs/{id}", a.handle(a.get))
 	mux.HandleFunc("DELETE /vendor-programs/{id}", a.handle(a.delete))
 	mux.HandleFunc("PUT /vendor-programs/{id}/expiry", a.handle(a.updateExpiry))
+	mux.HandleFunc("PUT /vendor-programs/{id}/quote-enabled", a.handle(a.updateQuoteEnabled))
 	mux.HandleFunc("PUT /vendor-programs/{id}/discount-options", a.handle(a.updateDiscountOptions))
 	mux.HandleFunc("PATCH /vendor-programs/{id}/product-overrides", a.handle(a.upsertProductOverrides))
 	mux.HandleFunc("DELETE /vendor-programs/{id}/product-overrides", a.handle(a.removeProductOverrides))
@@ -132,6 +133,7 @@ func bodyError(err error) error {
 func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	body, err := decodeBody[struct {
 		Vendor                string                        `json:"vendor"`
+		QuoteEnabled          bool                          `json:"quote_enabled"`
 		DiscountOptions       []domain.DiscountOption       `json:"discount_options"`
 		ProductOverrides      []domain.ProductOverride      `json:"product_overrides"`
 		ProductGroupOverrides []domain.ProductGroupOverride `json:"product_group_overrides"`
@@ -144,6 +146,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest(err.Error())
 	}
+	program.UpdateQuoteEnabled(body.QuoteEnabled)
 	if body.ExpiresAt != nil {
 		program.UpdateExpiry(body.ExpiresAt)
 	}
@@ -225,6 +228,22 @@ func (a *API) updateExpiry(w http.ResponseWriter, r *http.Request) error {
 	}
 	return a.update(w, r, func(program *domain.VendorProgram) error {
 		program.UpdateExpiry(expiresAt)
+		return nil
+	})
+}
+
+func (a *API) updateQuoteEnabled(w http.ResponseWriter, r *http.Request) error {
+	body, err := decodeBody[struct {
+		QuoteEnabled *bool `json:"quote_enabled"`
+	}](w, r)
+	if err != nil {
+		return err
+	}
+	if body.QuoteEnabled == nil {
+		return badRequest("quote_enabled is required and must be a boolean")
+	}
+	return a.update(w, r, func(program *domain.VendorProgram) error {
+		program.UpdateQuoteEnabled(*body.QuoteEnabled)
 		return nil
 	})
 }

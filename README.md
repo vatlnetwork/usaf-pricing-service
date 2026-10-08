@@ -38,6 +38,7 @@ All paths below are relative to `http://localhost:8080`. Send JSON request bodie
 | `GET` | `/vendor-programs/{id}` | Read a program |
 | `DELETE` | `/vendor-programs/{id}` | Delete a program |
 | `PUT` | `/vendor-programs/{id}/expiry` | `{"expires_at":"2030-01-01T00:00:00Z"}` sets expiry; `{"expires_at":null}` clears it |
+| `PUT` | `/vendor-programs/{id}/quote-enabled` | Set vendor quote eligibility with `{"quote_enabled":true}` or `{"quote_enabled":false}` |
 | `PUT` | `/vendor-programs/{id}/discount-options` | `UpdateDiscountOptions`: `{"discount_options":[...]}` replaces vendor options |
 | `PATCH` | `/vendor-programs/{id}/product-overrides` | `UpsertProductOverrides`: `{"product_overrides":[...]}` adds/replaces the supplied products' overrides |
 | `DELETE` | `/vendor-programs/{id}/product-overrides` | `RemoveProductOverrides`: `{"product_ids":["product-123"]}` removes selected overrides |
@@ -132,9 +133,23 @@ For a product in `Kitchen`, this overrides the vendor's `Standard` option. If th
 
 Delete group overrides with `DELETE /vendor-programs/PROGRAM_ID/product-group-overrides` and body `{"group_names":["Kitchen"]}`. Product-specific overrides remain in place.
 
+## Quote pricing
+
+Vendor programs, product overrides, and product group overrides accept `quote_enabled` (boolean, default `false`). Set the vendor flag when creating a program or with `PUT /vendor-programs/PROGRAM_ID/quote-enabled` and `{"quote_enabled":true}`. Set override flags through the existing product/group override PATCH endpoints. A product supports quotes when its vendor, its exact matching group, or its exact product override has the flag enabled. A false flag at one scope does not disable another scope's true flag.
+
+Eligible products expose one additional discount option, `{"name":"quote price","discount_path":[]}`, including alongside a fixed net price. This generated option replaces any configured option with the same name. Send a positive `quotePrice` in the dealer price request to use it:
+
+```json
+[{"productId":"product-123","groupName":"Kitchen","vendor":"Example Vendor","quotePrice":42.25}]
+```
+
+An eligible positive quote is returned unchanged and takes precedence over net prices and selected discounts. `listPrice` is not needed for an accepted quote. If quote pricing is unsupported, pricing falls back to the existing discount/net-price behavior using `listPrice` and the selected options. If that unsupported quote request has no discount selections, its result is `Unavailable` with reason `quote pricing is not supported and no discount options were provided`.
+
+Zero, negative, or omitted `quotePrice` uses the existing pricing behavior. Selecting the generated `quote price` option without a positive quote produces an unavailable reason when no fixed net price applies. Quote prices must be finite. Expiry and product/vendor identity validation still apply.
+
 ## Batch pricing
 
-Product overrides accept a `net_price` number, for example `{"product_id":"product-123","net_price":42.25}` in a create request or the `product_overrides` array of a PATCH request. A positive net price overrides all vendor, group, and product discounts. Discount lookup returns exactly `[{"name":"net price","discount_path":[],"net_price":42.25}]`, and dealer pricing returns the fixed amount unchanged, regardless of selected discount options (including missing or repeated names). Discount options stored on that product override are ignored, including their validation. Net prices must be finite and nonnegative; zero or omitted means normal discount behavior. Upserting the product override with zero or no `net_price` clears its fixed price. Program expiry and required product-data validation still apply.
+Product overrides accept a `net_price` number, for example `{"product_id":"product-123","net_price":42.25}` in a create request or the `product_overrides` array of a PATCH request. A positive net price overrides all vendor, group, and product discounts. Discount lookup returns `[{"name":"net price","discount_path":[],"net_price":42.25}]` plus the quote option if eligible. Unless a positive quote is submitted, dealer pricing returns the fixed amount unchanged, regardless of selected discount options (including missing or repeated names). Discount options stored on that product override are ignored, including their validation. Net prices must be finite and nonnegative; zero or omitted means normal discount behavior. Upserting the product override with zero or no `net_price` clears its fixed price. Program expiry and required product-data validation still apply.
 
 `POST /products/dealer-prices` accepts a JSON array with the fields from `domain.Product`. This endpoint uses camelCase product and response fields, matching the pricing response format. For the vendor program in the create example above:
 
@@ -174,13 +189,13 @@ Response (`200 OK`):
 }
 ```
 
-Without a positive net price override, the calculation starts with `listPrice`, applies selected options in the order supplied, and applies each option's discount path in order. Percentages reduce the current price; dollar amounts are subtracted from it. Only selected options are applied. Options are resolved from the vendor-wide options, overrides for the product's `groupName`, and overrides for that exact product, with product overrides taking highest priority. Only the winning option is applied when its name is selected. `groupName` is optional; an omitted, empty, or unmatched group name contributes no group options. Repeating an option in the selection applies it again.
+Without an accepted quote or positive net price override, the calculation starts with `listPrice`, applies selected options in the order supplied, and applies each option's discount path in order. Percentages reduce the current price; dollar amounts are subtracted from it. Only selected options are applied. Options are resolved from the vendor-wide options, overrides for the product's `groupName`, and overrides for that exact product, with product overrides taking highest priority. Only the winning option is applied when its name is selected. `groupName` is optional; an omitted, empty, or unmatched group name contributes no group options. Repeating an option in the selection applies it again.
 
 The calculation stops at zero and never returns a negative price. Decimal arithmetic preserves intermediate precision; only the final price is rounded to two decimals, with half cents rounding up. For example, `$100` minus `10%` then `$5` is `$85.00`. All selected options are checked before calculation, so a missing option produces an error even if an earlier discount would have reached zero.
 
 Vendor, group, and option names match exactly, including case and whitespace. A missing active vendor program, multiple active programs for the same vendor, a missing selected option, missing/invalid product data, or a database lookup failure produces an `Unavailable` result for the affected product. Other products still receive their results. Database error details are logged rather than exposed. Each distinct vendor is looked up once per request.
 
-`listPrice` is required, finite, and nonnegative. Without a positive net price override, missing or empty `discountOptions` means no discounts: the rounded list price is returned, provided an unexpired vendor program exists. All product IDs must be nonblank and unique within the batch; missing/duplicate IDs return `400` because the response is keyed by product ID. Malformed JSON, unknown fields, and incorrect JSON types also return `400`. An empty input array returns `{}`. The existing 1 MiB request limit applies.
+`listPrice` is required, finite, and nonnegative unless a quote is accepted. Without a submitted positive quote or positive net price override, missing or empty `discountOptions` means no discounts: the rounded list price is returned, provided an unexpired vendor program exists. All product IDs must be nonblank and unique within the batch; missing/duplicate IDs return `400` because the response is keyed by product ID. Malformed JSON, unknown fields, and incorrect JSON types also return `400`. An empty input array returns `{}`. The existing 1 MiB request limit applies.
 
 ## Tests
 

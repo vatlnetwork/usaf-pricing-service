@@ -12,6 +12,7 @@ import (
 type VendorProgram struct {
 	Id                    string                 `json:"id" bson:"-"`
 	Vendor                string                 `json:"vendor" bson:"vendor"` // name of the vendor
+	QuoteEnabled          bool                   `json:"quote_enabled" bson:"quote_enabled"`
 	DiscountOptions       []DiscountOption       `json:"discount_options" bson:"discount_options"`
 	ProductOverrides      []ProductOverride      `json:"product_overrides" bson:"product_overrides"`
 	ProductGroupOverrides []ProductGroupOverride `json:"product_group_overrides" bson:"product_group_overrides"`
@@ -21,6 +22,34 @@ type VendorProgram struct {
 }
 
 var ErrVendorProgramExpired = errors.New("vendor program has expired")
+
+const quotePriceOptionName = "quote price"
+
+func (v *VendorProgram) UpdateQuoteEnabled(enabled bool) {
+	v.QuoteEnabled = enabled
+	v.UpdatedAt = time.Now()
+}
+
+// SupportsQuotePricing reports eligibility at any matching scope. A false
+// override does not disable quotes enabled by the vendor or matching group.
+func (v *VendorProgram) SupportsQuotePricing(productId, groupName string) bool {
+	if v.QuoteEnabled {
+		return true
+	}
+	for _, override := range v.ProductOverrides {
+		if override.ProductId == productId && override.QuoteEnabled {
+			return true
+		}
+	}
+	if groupName != "" {
+		for _, override := range v.ProductGroupOverrides {
+			if override.GroupName == groupName && override.QuoteEnabled {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // IsExpired reports whether the expiry instant has been reached. A nil expiry
 // preserves availability for programs created before expiry was supported.
@@ -111,6 +140,7 @@ func (d DiscountPathItemType) Validate() error {
 
 type ProductOverride struct {
 	ProductId       string           `json:"product_id" bson:"product_id"`
+	QuoteEnabled    bool             `json:"quote_enabled" bson:"quote_enabled"`
 	NetPrice        float64          `json:"net_price,omitempty" bson:"net_price,omitempty"` // zero means no fixed price
 	DiscountOptions []DiscountOption `json:"discount_options" bson:"discount_options"`
 }
@@ -145,6 +175,7 @@ func validateNetPrice(price float64) error {
 
 type ProductGroupOverride struct {
 	GroupName       string           `json:"group_name" bson:"group_name"`
+	QuoteEnabled    bool             `json:"quote_enabled" bson:"quote_enabled"`
 	DiscountOptions []DiscountOption `json:"discount_options" bson:"discount_options"`
 }
 
@@ -384,13 +415,14 @@ func (v *VendorProgram) RemoveProductGroupOverrides(groupNames []string) {
 // in vendor, group, then product order. Higher-priority scopes replace entire
 // options with matching names. An empty group name skips group overrides.
 // A positive product net price replaces all options with one fixed-price option.
+// Quote eligibility adds a quote price option, including alongside a net price.
 // Expired programs return no options.
 func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string) []DiscountOption {
 	if v.IsExpired(time.Now()) {
 		return []DiscountOption{}
 	}
 	if netPrice := v.netPriceForProduct(productId); netPrice > 0 {
-		return []DiscountOption{{Name: "net price", NetPrice: netPrice, DiscountPath: []DiscountPathItem{}}}
+		return v.withQuoteOption(productId, groupName, []DiscountOption{{Name: "net price", NetPrice: netPrice, DiscountPath: []DiscountPathItem{}}})
 	}
 	productOptions := []DiscountOption{}
 	for _, override := range v.ProductOverrides {
@@ -407,7 +439,15 @@ func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string
 		}
 	}
 	options := mergeDiscountOptions(v.DiscountOptions, groupOptions)
-	return cloneDiscountOptions(mergeDiscountOptions(options, productOptions))
+	return v.withQuoteOption(productId, groupName, cloneDiscountOptions(mergeDiscountOptions(options, productOptions)))
+}
+
+func (v *VendorProgram) withQuoteOption(productId, groupName string, options []DiscountOption) []DiscountOption {
+	if v.SupportsQuotePricing(productId, groupName) {
+		// The generated quote option takes precedence over a configured namesake.
+		return mergeDiscountOptions(options, []DiscountOption{{Name: quotePriceOptionName, DiscountPath: []DiscountPathItem{}}})
+	}
+	return options
 }
 
 func (v *VendorProgram) netPriceForProduct(productId string) float64 {

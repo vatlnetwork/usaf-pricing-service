@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 
@@ -17,6 +16,7 @@ type priceProductRequest struct {
 	GroupName       string   `json:"groupName"`
 	Vendor          string   `json:"vendor"`
 	ListPrice       *float64 `json:"listPrice"`
+	QuotePrice      float64  `json:"quotePrice"`
 	DiscountOptions []string `json:"discountOptions"`
 }
 
@@ -58,14 +58,6 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 			results[input.ProductID] = unavailablePrice("vendor is required")
 			continue
 		}
-		if input.ListPrice == nil {
-			results[input.ProductID] = unavailablePrice("listPrice is required")
-			continue
-		}
-		if math.IsNaN(*input.ListPrice) || math.IsInf(*input.ListPrice, 0) || *input.ListPrice < 0 {
-			results[input.ProductID] = unavailablePrice("list price must be finite and nonnegative")
-			continue
-		}
 		lookup, exists := cache[input.Vendor]
 		if !exists {
 			lookup.program, err = a.programs.GetByVendor(r.Context(), input.Vendor)
@@ -90,8 +82,20 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 			results[input.ProductID] = unavailablePrice(lookup.reason)
 			continue
 		}
+		// Quotes do not require a list price. Let the domain report unsupported
+		// quote requests without selections before requiring a fallback list price.
+		quoteRequested := input.QuotePrice > 0
+		quoteSupported := lookup.program.SupportsQuotePricing(input.ProductID, input.GroupName)
+		if input.ListPrice == nil && !(quoteRequested && (quoteSupported || len(input.DiscountOptions) == 0)) {
+			results[input.ProductID] = unavailablePrice("listPrice is required")
+			continue
+		}
+		var listPrice float64
+		if input.ListPrice != nil {
+			listPrice = *input.ListPrice
+		}
 		price, err := lookup.program.CalculateDealerPrice(domain.Product{
-			ProductId: input.ProductID, GroupName: input.GroupName, Vendor: input.Vendor, ListPrice: *input.ListPrice, DiscountOptions: input.DiscountOptions,
+			ProductId: input.ProductID, GroupName: input.GroupName, Vendor: input.Vendor, ListPrice: listPrice, QuotePrice: input.QuotePrice, DiscountOptions: input.DiscountOptions,
 		})
 		if err != nil {
 			results[input.ProductID] = unavailablePrice(err.Error())

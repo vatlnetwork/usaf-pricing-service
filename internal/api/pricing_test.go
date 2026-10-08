@@ -123,6 +123,7 @@ func TestDealerPricesInvalidBatches(t *testing.T) {
 		`[{"productId":"same"},{"productId":"same"}]`,
 		`[{"productId":"a","unknown":1}]`,
 		`[{"productId":"a","listPrice":"bad"}]`,
+		`[{"productId":"a","quotePrice":"bad"}]`,
 		`[{"productId":"a","groupName":123,"listPrice":100}]`,
 		`[] []`,
 	} {
