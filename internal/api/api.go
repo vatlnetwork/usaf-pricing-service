@@ -34,6 +34,7 @@ func NewHandler(programs store.VendorPrograms, timeout time.Duration, logger *sl
 	mux.HandleFunc("GET /vendor-programs", a.handle(a.list))
 	mux.HandleFunc("GET /vendor-programs/{id}", a.handle(a.get))
 	mux.HandleFunc("DELETE /vendor-programs/{id}", a.handle(a.delete))
+	mux.HandleFunc("PUT /vendor-programs/{id}/expiry", a.handle(a.updateExpiry))
 	mux.HandleFunc("PUT /vendor-programs/{id}/discount-options", a.handle(a.updateDiscountOptions))
 	mux.HandleFunc("PATCH /vendor-programs/{id}/product-overrides", a.handle(a.upsertProductOverrides))
 	mux.HandleFunc("DELETE /vendor-programs/{id}/product-overrides", a.handle(a.removeProductOverrides))
@@ -73,6 +74,8 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, store.ErrInvalidID):
 		status, message = http.StatusBadRequest, err.Error()
 	case errors.Is(err, store.ErrNotFound):
+		status, message = http.StatusNotFound, err.Error()
+	case errors.Is(err, domain.ErrVendorProgramExpired):
 		status, message = http.StatusNotFound, err.Error()
 	case errors.Is(err, store.ErrConflict):
 		status, message = http.StatusConflict, err.Error()
@@ -132,6 +135,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 		DiscountOptions       []domain.DiscountOption       `json:"discount_options"`
 		ProductOverrides      []domain.ProductOverride      `json:"product_overrides"`
 		ProductGroupOverrides []domain.ProductGroupOverride `json:"product_group_overrides"`
+		ExpiresAt             *time.Time                    `json:"expires_at"`
 	}](w, r)
 	if err != nil {
 		return err
@@ -139,6 +143,9 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	program, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides, body.ProductGroupOverrides)
 	if err != nil {
 		return badRequest(err.Error())
+	}
+	if body.ExpiresAt != nil {
+		program.UpdateExpiry(body.ExpiresAt)
 	}
 	if err := a.programs.Create(r.Context(), program); err != nil {
 		return err
@@ -200,6 +207,26 @@ func (a *API) update(w http.ResponseWriter, r *http.Request, mutate func(*domain
 	}
 	writeJSON(w, http.StatusOK, program)
 	return nil
+}
+
+func (a *API) updateExpiry(w http.ResponseWriter, r *http.Request) error {
+	body, err := decodeBody[struct {
+		ExpiresAt json.RawMessage `json:"expires_at"`
+	}](w, r)
+	if err != nil {
+		return err
+	}
+	if len(body.ExpiresAt) == 0 {
+		return badRequest("expires_at is required; use null to clear the expiry")
+	}
+	var expiresAt *time.Time
+	if err := json.Unmarshal(body.ExpiresAt, &expiresAt); err != nil {
+		return badRequest("expires_at must be an RFC 3339 timestamp with a timezone, or null")
+	}
+	return a.update(w, r, func(program *domain.VendorProgram) error {
+		program.UpdateExpiry(expiresAt)
+		return nil
+	})
 }
 
 func (a *API) updateDiscountOptions(w http.ResponseWriter, r *http.Request) error {
@@ -293,6 +320,9 @@ func (a *API) getProductDiscountOptions(w http.ResponseWriter, r *http.Request) 
 	program, err := a.programs.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
+	}
+	if program.IsExpired(time.Now()) {
+		return domain.ErrVendorProgramExpired
 	}
 	writeJSON(w, http.StatusOK, program.GetDiscountOptionsForProduct(r.PathValue("productID"), r.URL.Query().Get("group_name")))
 	return nil

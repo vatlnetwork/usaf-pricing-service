@@ -17,6 +17,7 @@ var (
 type VendorPrograms interface {
 	Create(context.Context, *domain.VendorProgram) error
 	Get(context.Context, string) (*domain.VendorProgram, error)
+	// GetByVendor considers only programs whose expiry has not been reached.
 	GetByVendor(context.Context, string) (*domain.VendorProgram, error)
 	List(ctx context.Context, limit, offset int64) ([]domain.VendorProgram, error)
 	// Update commits the mutation only when it succeeds and the stored version

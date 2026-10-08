@@ -15,8 +15,28 @@ type VendorProgram struct {
 	DiscountOptions       []DiscountOption       `json:"discount_options" bson:"discount_options"`
 	ProductOverrides      []ProductOverride      `json:"product_overrides" bson:"product_overrides"`
 	ProductGroupOverrides []ProductGroupOverride `json:"product_group_overrides" bson:"product_group_overrides"`
+	ExpiresAt             *time.Time             `json:"expires_at" bson:"expires_at,omitempty"`
 	CreatedAt             time.Time              `json:"created_at" bson:"created_at"`
 	UpdatedAt             time.Time              `json:"updated_at" bson:"updated_at"`
+}
+
+var ErrVendorProgramExpired = errors.New("vendor program has expired")
+
+// IsExpired reports whether the expiry instant has been reached. A nil expiry
+// preserves availability for programs created before expiry was supported.
+func (v *VendorProgram) IsExpired(at time.Time) bool {
+	return v.ExpiresAt != nil && !at.Before(*v.ExpiresAt)
+}
+
+// UpdateExpiry sets or clears the expiry, copying the input and using MongoDB's
+// millisecond precision so availability is consistent before and after storage.
+func (v *VendorProgram) UpdateExpiry(expiresAt *time.Time) {
+	v.ExpiresAt = nil
+	if expiresAt != nil {
+		expiry := expiresAt.UTC().Truncate(time.Millisecond)
+		v.ExpiresAt = &expiry
+	}
+	v.UpdatedAt = time.Now()
 }
 
 type DiscountOption struct {
@@ -344,7 +364,11 @@ func (v *VendorProgram) RemoveProductGroupOverrides(groupNames []string) {
 // GetDiscountOptionsForProduct returns independent copies of effective options
 // in vendor, group, then product order. Higher-priority scopes replace entire
 // options with matching names. An empty group name skips group overrides.
+// Expired programs return no options.
 func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string) []DiscountOption {
+	if v.IsExpired(time.Now()) {
+		return []DiscountOption{}
+	}
 	productOptions := []DiscountOption{}
 	for _, override := range v.ProductOverrides {
 		if override.ProductId == productId {

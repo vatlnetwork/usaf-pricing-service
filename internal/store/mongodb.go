@@ -84,10 +84,18 @@ func (m *MongoDB) Get(ctx context.Context, id string) (*domain.VendorProgram, er
 	return &doc.Program, nil
 }
 
-// GetByVendor requires an exact, unambiguous vendor match. Existing CRUD permits
-// multiple programs per vendor, so pricing must not silently select one of them.
+// GetByVendor requires an exact, unambiguous match among unexpired programs.
+// Filter before applying the limit so expired programs cannot hide an active
+// program or cause a false ambiguity. Null also matches legacy missing fields.
 func (m *MongoDB) GetByVendor(ctx context.Context, vendor string) (*domain.VendorProgram, error) {
-	cursor, err := m.collection.Find(ctx, bson.M{"vendor": vendor}, options.Find().SetLimit(2).
+	filter := bson.M{
+		"vendor": vendor,
+		"$or": bson.A{
+			bson.M{"expires_at": nil},
+			bson.M{"expires_at": bson.M{"$gt": time.Now()}},
+		},
+	}
+	cursor, err := m.collection.Find(ctx, filter, options.Find().SetLimit(2).
 		SetCollation(&options.Collation{Locale: "simple"}))
 	if err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CalculateDealerPrice applies selected options in product order and each
@@ -14,6 +15,9 @@ import (
 // earlier discount would reduce the price to zero. Only the final price is
 // rounded, to the nearest cent (half cents round up).
 func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
+	if v.IsExpired(time.Now()) {
+		return 0, ErrVendorProgramExpired
+	}
 	if strings.TrimSpace(product.ProductId) == "" {
 		return 0, errors.New("product id is required")
 	}
