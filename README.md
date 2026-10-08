@@ -134,6 +134,8 @@ Delete group overrides with `DELETE /vendor-programs/PROGRAM_ID/product-group-ov
 
 ## Batch pricing
 
+Product overrides accept a `net_price` number, for example `{"product_id":"product-123","net_price":42.25}` in a create request or the `product_overrides` array of a PATCH request. A positive net price overrides all vendor, group, and product discounts. Discount lookup returns exactly `[{"name":"net price","discount_path":[],"net_price":42.25}]`, and dealer pricing returns the fixed amount unchanged, regardless of selected discount options (including missing or repeated names). Discount options stored on that product override are ignored, including their validation. Net prices must be finite and nonnegative; zero or omitted means normal discount behavior. Upserting the product override with zero or no `net_price` clears its fixed price. Program expiry and required product-data validation still apply.
+
 `POST /products/dealer-prices` accepts a JSON array with the fields from `domain.Product`. This endpoint uses camelCase product and response fields, matching the pricing response format. For the vendor program in the create example above:
 
 ```sh
@@ -172,13 +174,13 @@ Response (`200 OK`):
 }
 ```
 
-The calculation starts with `listPrice`, applies selected options in the order supplied, and applies each option's discount path in order. Percentages reduce the current price; dollar amounts are subtracted from it. Only selected options are applied. Options are resolved from the vendor-wide options, overrides for the product's `groupName`, and overrides for that exact product, with product overrides taking highest priority. Only the winning option is applied when its name is selected. `groupName` is optional; an omitted, empty, or unmatched group name contributes no group options. Repeating an option in the selection applies it again.
+Without a positive net price override, the calculation starts with `listPrice`, applies selected options in the order supplied, and applies each option's discount path in order. Percentages reduce the current price; dollar amounts are subtracted from it. Only selected options are applied. Options are resolved from the vendor-wide options, overrides for the product's `groupName`, and overrides for that exact product, with product overrides taking highest priority. Only the winning option is applied when its name is selected. `groupName` is optional; an omitted, empty, or unmatched group name contributes no group options. Repeating an option in the selection applies it again.
 
 The calculation stops at zero and never returns a negative price. Decimal arithmetic preserves intermediate precision; only the final price is rounded to two decimals, with half cents rounding up. For example, `$100` minus `10%` then `$5` is `$85.00`. All selected options are checked before calculation, so a missing option produces an error even if an earlier discount would have reached zero.
 
 Vendor, group, and option names match exactly, including case and whitespace. A missing active vendor program, multiple active programs for the same vendor, a missing selected option, missing/invalid product data, or a database lookup failure produces an `Unavailable` result for the affected product. Other products still receive their results. Database error details are logged rather than exposed. Each distinct vendor is looked up once per request.
 
-`listPrice` is required, finite, and nonnegative. Missing or empty `discountOptions` means no discounts: the rounded list price is returned, provided an unexpired vendor program exists. All product IDs must be nonblank and unique within the batch; missing/duplicate IDs return `400` because the response is keyed by product ID. Malformed JSON, unknown fields, and incorrect JSON types also return `400`. An empty input array returns `{}`. The existing 1 MiB request limit applies.
+`listPrice` is required, finite, and nonnegative. Without a positive net price override, missing or empty `discountOptions` means no discounts: the rounded list price is returned, provided an unexpired vendor program exists. All product IDs must be nonblank and unique within the batch; missing/duplicate IDs return `400` because the response is keyed by product ID. Malformed JSON, unknown fields, and incorrect JSON types also return `400`. An empty input array returns `{}`. The existing 1 MiB request limit applies.
 
 ## Tests
 

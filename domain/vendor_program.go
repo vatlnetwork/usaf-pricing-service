@@ -42,6 +42,8 @@ func (v *VendorProgram) UpdateExpiry(expiresAt *time.Time) {
 type DiscountOption struct {
 	Name         string             `json:"name" bson:"name"`
 	DiscountPath []DiscountPathItem `json:"discount_path" bson:"discount_path"`
+	// NetPrice is populated for the effective option from a net price override.
+	NetPrice float64 `json:"net_price,omitempty" bson:"net_price,omitempty"`
 }
 
 func (d DiscountOption) Validate() error {
@@ -109,12 +111,19 @@ func (d DiscountPathItemType) Validate() error {
 
 type ProductOverride struct {
 	ProductId       string           `json:"product_id" bson:"product_id"`
+	NetPrice        float64          `json:"net_price,omitempty" bson:"net_price,omitempty"` // zero means no fixed price
 	DiscountOptions []DiscountOption `json:"discount_options" bson:"discount_options"`
 }
 
 func (p ProductOverride) Validate() error {
 	if strings.TrimSpace(p.ProductId) == "" {
 		return errors.New("product id is required")
+	}
+	if err := validateNetPrice(p.NetPrice); err != nil {
+		return err
+	}
+	if p.NetPrice > 0 {
+		return nil
 	}
 
 	for _, o := range p.DiscountOptions {
@@ -125,6 +134,13 @@ func (p ProductOverride) Validate() error {
 	}
 
 	return validateDiscountOptionNames(p.DiscountOptions)
+}
+
+func validateNetPrice(price float64) error {
+	if math.IsNaN(price) || math.IsInf(price, 0) || price < 0 {
+		return errors.New("net price must be finite and nonnegative")
+	}
+	return nil
 }
 
 type ProductGroupOverride struct {
@@ -306,6 +322,9 @@ func (v *VendorProgram) validateDiscountOptionUniqueness() error {
 	}
 
 	for _, o := range v.ProductOverrides {
+		if o.NetPrice > 0 {
+			continue
+		}
 		if err := validateDiscountOptionNames(o.DiscountOptions); err != nil {
 			return err
 		}
@@ -364,10 +383,14 @@ func (v *VendorProgram) RemoveProductGroupOverrides(groupNames []string) {
 // GetDiscountOptionsForProduct returns independent copies of effective options
 // in vendor, group, then product order. Higher-priority scopes replace entire
 // options with matching names. An empty group name skips group overrides.
+// A positive product net price replaces all options with one fixed-price option.
 // Expired programs return no options.
 func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string) []DiscountOption {
 	if v.IsExpired(time.Now()) {
 		return []DiscountOption{}
+	}
+	if netPrice := v.netPriceForProduct(productId); netPrice > 0 {
+		return []DiscountOption{{Name: "net price", NetPrice: netPrice, DiscountPath: []DiscountPathItem{}}}
 	}
 	productOptions := []DiscountOption{}
 	for _, override := range v.ProductOverrides {
@@ -385,6 +408,15 @@ func (v *VendorProgram) GetDiscountOptionsForProduct(productId, groupName string
 	}
 	options := mergeDiscountOptions(v.DiscountOptions, groupOptions)
 	return cloneDiscountOptions(mergeDiscountOptions(options, productOptions))
+}
+
+func (v *VendorProgram) netPriceForProduct(productId string) float64 {
+	for _, override := range v.ProductOverrides {
+		if override.ProductId == productId {
+			return override.NetPrice
+		}
+	}
+	return 0
 }
 
 // Preserve duplicates within a scope so pricing can still reject ambiguous

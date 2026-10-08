@@ -14,6 +14,7 @@ import (
 // option's path in path order. All selected options must exist, even if an
 // earlier discount would reduce the price to zero. Only the final price is
 // rounded, to the nearest cent (half cents round up).
+// A positive product net price is returned unchanged, ignoring selected options.
 func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	if v.IsExpired(time.Now()) {
 		return 0, ErrVendorProgramExpired
@@ -29,6 +30,13 @@ func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	}
 	if math.IsNaN(product.ListPrice) || math.IsInf(product.ListPrice, 0) || product.ListPrice < 0 {
 		return 0, errors.New("list price must be finite and nonnegative")
+	}
+	netPrice := v.netPriceForProduct(product.ProductId)
+	if err := validateNetPrice(netPrice); err != nil {
+		return 0, err
+	}
+	if netPrice > 0 {
+		return netPrice, nil
 	}
 	available := make(map[string]DiscountOption)
 	for _, option := range v.GetDiscountOptionsForProduct(product.ProductId, product.GroupName) {
