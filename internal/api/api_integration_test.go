@@ -98,7 +98,7 @@ func TestMongoAPIIntegration(t *testing.T) {
 	created := decodeProgram(request("POST", "/vendor-programs", `{
 		"vendor":"ACME",
 		"discount_options":[{"name":"base","discount_path":[{"type":"percentage","amount":10}]}],
-		"product_overrides":[{"product_id":"a","discount_options":[{"name":"extra-a","discount_path":[{"type":"dollar_amount","amount":5}]}]}]
+		"product_overrides":[{"product_id":"a","discount_options":[{"name":"extra-a","discount_path":[{"type":"dollar_amount","amount":5}]},{"name":"base","discount_path":[{"type":"percentage","amount":20}]}]}]
 	}`, 201))
 	if len(created.Id) != 24 || created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() {
 		t.Fatalf("invalid generated fields: %+v", created)
@@ -124,17 +124,18 @@ func TestMongoAPIIntegration(t *testing.T) {
 		t.Fatalf("unexpected options update: %+v", updated)
 	}
 	updated = decodeProgram(request("PATCH", path+"/product-overrides", `{"product_overrides":[
-		{"product_id":"a","discount_options":[{"name":"extra-a-new","discount_path":[]}]},
-		{"product_id":"b","discount_options":[{"name":"extra-b","discount_path":[]}]}
+		{"product_id":"a","discount_options":[{"name":"extra-a-new","discount_path":[]},{"name":"base-new","discount_path":[{"type":"percentage","amount":25}]}]},
+		{"product_id":"b","discount_options":[{"name":"extra-b","discount_path":[]},{"name":"base-new","discount_path":[{"type":"percentage","amount":35}]}]}
 	]}`, 200))
 	if len(updated.ProductOverrides) != 2 || updated.ProductOverrides[0].DiscountOptions[0].Name != "extra-a-new" {
 		t.Fatalf("unexpected upsert: %+v", updated)
 	}
 	for _, product := range []struct {
-		id    string
-		names []string
+		id     string
+		names  []string
+		amount float64
 	}{
-		{"a", []string{"base-new", "extra-a-new"}}, {"b", []string{"base-new", "extra-b"}}, {"other", []string{"base-new"}},
+		{"a", []string{"extra-a-new", "base-new"}, 25}, {"b", []string{"extra-b", "base-new"}, 35}, {"other", []string{"base-new"}, 15},
 	} {
 		var discounts []domain.DiscountOption
 		if err := json.Unmarshal(request("GET", path+"/products/"+product.id+"/discount-options", "", 200), &discounts); err != nil {
@@ -147,9 +148,12 @@ func TestMongoAPIIntegration(t *testing.T) {
 			if discounts[i].Name != name {
 				t.Fatalf("wrong option: got %s, want %s", discounts[i].Name, name)
 			}
+			if name == "base-new" && (len(discounts[i].DiscountPath) != 1 || discounts[i].DiscountPath[0].Amount != product.amount) {
+				t.Fatalf("wrong effective option for %s: %+v", product.id, discounts[i])
+			}
 		}
 	}
-	request("PATCH", path+"/product-overrides", `{"product_overrides":[{"product_id":"a","discount_options":[{"name":"base-new"}]}]}`, 400)
+	request("PATCH", path+"/product-overrides", `{"product_overrides":[{"product_id":"a","discount_options":[{"name":"base-new"},{"name":"base-new"}]}]}`, 400)
 	got = decodeProgram(request("GET", path, "", 200))
 	if got.ProductOverrides[0].DiscountOptions[0].Name != "extra-a-new" {
 		t.Fatal("failed update was persisted")
@@ -221,6 +225,8 @@ func TestMongoPricingIntegration(t *testing.T) {
 			{Type: domain.DiscountPathItemTypeDollarAmount, Amount: 5},
 		}},
 	}, []domain.ProductOverride{
+		{ProductId: "overridden", DiscountOptions: []domain.DiscountOption{{Name: "standard", DiscountPath: []domain.DiscountPathItem{{Type: domain.DiscountPathItemTypePercentage, Amount: 20}}}}},
+		{ProductId: "disabled", DiscountOptions: []domain.DiscountOption{{Name: "standard"}}},
 		{ProductId: "a", DiscountOptions: []domain.DiscountOption{{Name: "extra", DiscountPath: []domain.DiscountPathItem{{Type: domain.DiscountPathItemTypePercentage, Amount: 50}}}}},
 	})
 	if err != nil {
@@ -253,6 +259,8 @@ func TestMongoPricingIntegration(t *testing.T) {
 		return results
 	}
 	results := price(`[
+		{"productId":"overridden","vendor":"ACME","listPrice":100,"discountOptions":["standard"]},
+		{"productId":"disabled","vendor":"ACME","listPrice":100,"discountOptions":["standard"]},
 		{"productId":"a","vendor":"ACME","listPrice":100,"discountOptions":["standard","extra"]},
 		{"productId":"b","vendor":"ACME","listPrice":100,"discountOptions":["extra"]},
 		{"productId":"c","vendor":"ACME","listPrice":100,"discountOptions":["standard"]},
@@ -260,7 +268,7 @@ func TestMongoPricingIntegration(t *testing.T) {
 		{"productId":"unknown","vendor":"unknown","listPrice":100},
 		{"productId":"case","vendor":"acme","listPrice":100}
 	]`)
-	for id, want := range map[string]float64{"a": 42.5, "c": 85, "zero": 0} {
+	for id, want := range map[string]float64{"a": 42.5, "c": 85, "zero": 0, "overridden": 80, "disabled": 100} {
 		got := results[id]
 		if got.Price == nil || *got.Price != want || got.Reason != "" {
 			t.Fatalf("%s: got %+v, want price %v", id, got, want)

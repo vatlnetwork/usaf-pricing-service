@@ -21,10 +21,8 @@ func TestUpsertProductOverridesFailurePreservesState(t *testing.T) {
 	}{
 		{"invalid item after replacement", []ProductOverride{testOverride("a", "new"), {ProductId: ""}}},
 		{"invalid item after append", []ProductOverride{testOverride("b", "new"), {ProductId: ""}}},
-		{"replacement conflicts with base", []ProductOverride{testOverride("a", "base")}},
-		{"append conflicts with base", []ProductOverride{testOverride("b", "base")}},
 		{"duplicate names within override", []ProductOverride{{ProductId: "a", DiscountOptions: []DiscountOption{{Name: "same"}, {Name: "same"}}}}},
-		{"duplicate names between overrides", []ProductOverride{testOverride("a", "same"), testOverride("b", "same")}},
+		{"duplicate names after valid replacement", []ProductOverride{testOverride("a", "base"), {ProductId: "b", DiscountOptions: []DiscountOption{{Name: "same"}, {Name: "same"}}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,17 +50,17 @@ func TestUpsertProductOverridesFailurePreservesState(t *testing.T) {
 }
 
 func TestUpsertProductOverridesSuccess(t *testing.T) {
-	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "old"), testOverride("c", "untouched")})
+	v, err := NewVendorProgram("vendor", []DiscountOption{{Name: "base"}}, []ProductOverride{testOverride("a", "old"), testOverride("c", "base")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	v.UpdatedAt = time.Unix(1, 0)
 	createdAt := v.CreatedAt
-	updates := []ProductOverride{testOverride("a", "new"), testOverride("b", "added")}
+	updates := []ProductOverride{testOverride("a", "base"), testOverride("b", "base")}
 	if err := v.UpsertProductOverrides(updates); err != nil {
 		t.Fatal(err)
 	}
-	want := []ProductOverride{testOverride("a", "new"), testOverride("c", "untouched"), testOverride("b", "added")}
+	want := []ProductOverride{testOverride("a", "base"), testOverride("c", "base"), testOverride("b", "base")}
 	if !reflect.DeepEqual(v.ProductOverrides, want) {
 		t.Fatalf("got %+v, want %+v", v.ProductOverrides, want)
 	}
@@ -166,7 +164,7 @@ func TestUpdateDiscountOptionsFailurePreservesState(t *testing.T) {
 	updatedAt := v.UpdatedAt
 	for _, options := range [][]DiscountOption{
 		{testDiscountOption("invalid", -1)},
-		{testDiscountOption("extra", 10)},
+		{testDiscountOption("extra", 10), testDiscountOption("extra", 20)},
 	} {
 		if err := v.UpdateDiscountOptions(options); err == nil {
 			t.Fatal("expected error")
@@ -233,5 +231,84 @@ func TestGetDiscountOptionsForProductAddsOnlyMatchingOptionsAndReturnsCopies(t *
 				t.Fatalf("output mutation changed stored options: %+v", got)
 			}
 		})
+	}
+}
+
+func TestNewVendorProgramDiscountOptionNameScopes(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		options   []DiscountOption
+		overrides []ProductOverride
+		wantError bool
+	}{
+		{"shared across all scopes", []DiscountOption{{Name: "same"}}, []ProductOverride{testOverride("a", "same"), testOverride("b", "same")}, false},
+		{"shared between overrides", nil, []ProductOverride{testOverride("a", "same"), testOverride("b", "same")}, false},
+		{"duplicate vendor options", []DiscountOption{{Name: "same"}, {Name: "same"}}, nil, true},
+		{"duplicate override options", nil, []ProductOverride{{ProductId: "a", DiscountOptions: []DiscountOption{{Name: "same"}, {Name: "same"}}}}, true},
+		{"duplicate in later override", nil, []ProductOverride{testOverride("a", "same"), {ProductId: "b", DiscountOptions: []DiscountOption{{Name: "same"}, {Name: "same"}}}}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewVendorProgram("vendor", tt.options, tt.overrides)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("error = %v, want error = %v", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestUpdateDiscountOptionsAllowsOverrideNames(t *testing.T) {
+	v, err := NewVendorProgram("vendor", nil, []ProductOverride{testOverride("a", "shared"), testOverride("b", "shared")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := []DiscountOption{testDiscountOption("shared", 10)}
+	if err := v.UpdateDiscountOptions(options); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(v.DiscountOptions, options) {
+		t.Fatalf("got %+v, want %+v", v.DiscountOptions, options)
+	}
+}
+
+func TestGetDiscountOptionsForProductOverridePrecedence(t *testing.T) {
+	base := []DiscountOption{testDiscountOption("shared", 10), testDiscountOption("base-only", 5)}
+	v, err := NewVendorProgram("vendor", base, []ProductOverride{
+		{ProductId: "a", DiscountOptions: []DiscountOption{testDiscountOption("shared", 20), testDiscountOption("extra", 30)}},
+		{ProductId: "b", DiscountOptions: []DiscountOption{testDiscountOption("shared", 40), testDiscountOption("extra", 50)}},
+		{ProductId: "empty-path", DiscountOptions: []DiscountOption{{Name: "shared"}}},
+		{ProductId: "empty-override"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		productID string
+		want      []DiscountOption
+	}{
+		{"a", []DiscountOption{testDiscountOption("base-only", 5), testDiscountOption("shared", 20), testDiscountOption("extra", 30)}},
+		{"b", []DiscountOption{testDiscountOption("base-only", 5), testDiscountOption("shared", 40), testDiscountOption("extra", 50)}},
+		{"empty-path", []DiscountOption{testDiscountOption("base-only", 5), {Name: "shared"}}},
+		{"empty-override", base},
+		{"without-override", base},
+	} {
+		t.Run(tt.productID, func(t *testing.T) {
+			got := v.GetDiscountOptionsForProduct(tt.productID)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("got %+v, want %+v", got, tt.want)
+			}
+			for i := range got {
+				got[i].Name = "changed"
+				if len(got[i].DiscountPath) > 0 {
+					got[i].DiscountPath[0].Amount = -1
+				}
+			}
+			if got := v.GetDiscountOptionsForProduct(tt.productID); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("output mutation changed stored options: %+v", got)
+			}
+		})
+	}
+	v.RemoveProductOverrides([]string{"a"})
+	if got := v.GetDiscountOptionsForProduct("a"); !reflect.DeepEqual(got, base) {
+		t.Fatalf("removing override did not restore vendor options: %+v", got)
 	}
 }

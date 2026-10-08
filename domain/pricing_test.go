@@ -23,6 +23,9 @@ func TestCalculateDealerPrice(t *testing.T) {
 			{Name: "invalid", DiscountPath: []DiscountPathItem{{Type: DiscountPathItemTypePercentage, Amount: math.NaN()}}},
 		},
 		ProductOverrides: []ProductOverride{
+			{ProductId: "overridden", DiscountOptions: []DiscountOption{testDiscountOption("path", 20)}},
+			{ProductId: "other-override", DiscountOptions: []DiscountOption{testDiscountOption("path", 30)}},
+			{ProductId: "disabled", DiscountOptions: []DiscountOption{{Name: "path"}}},
 			{ProductId: "special", DiscountOptions: []DiscountOption{{Name: "extra", DiscountPath: []DiscountPathItem{{Type: DiscountPathItemTypePercentage, Amount: 50}}}}},
 		},
 	}
@@ -34,6 +37,12 @@ func TestCalculateDealerPrice(t *testing.T) {
 		want      float64
 		errText   string
 	}{
+		{"override replaces entire vendor path", "overridden", 100, []string{"path"}, 80, ""},
+		{"separate product override", "other-override", 100, []string{"path"}, 70, ""},
+		{"vendor path without override", "a", 100, []string{"path"}, 85, ""},
+		{"empty override path replaces vendor path", "disabled", 100, []string{"path"}, 100, ""},
+		{"override and inherited option", "overridden", 100, []string{"path", "ten-dollars"}, 70, ""},
+		{"repeated override selection", "overridden", 100, []string{"path", "path"}, 64, ""},
 		{"percentage", "a", 100, []string{"ten-percent"}, 90, ""},
 		{"dollar", "a", 100, []string{"ten-dollars"}, 90, ""},
 		{"percentage then dollar", "a", 100, []string{"ten-percent", "ten-dollars"}, 80, ""},

@@ -103,7 +103,7 @@ func (p ProductOverride) Validate() error {
 		}
 	}
 
-	return nil
+	return validateDiscountOptionNames(p.DiscountOptions)
 }
 
 func NewVendorProgram(
@@ -115,17 +115,14 @@ func NewVendorProgram(
 		return nil, errors.New("vendor name is required")
 	}
 
-	optionNames := []string{}
-
 	for _, o := range discountOptions {
 		err := o.Validate()
 		if err != nil {
 			return nil, err
 		}
-		if slices.Contains(optionNames, o.Name) {
-			return nil, fmt.Errorf("cannot have duplicate discount option names. found duplicate: %v", o.Name)
-		}
-		optionNames = append(optionNames, o.Name)
+	}
+	if err := validateDiscountOptionNames(discountOptions); err != nil {
+		return nil, err
 	}
 
 	productIds := []string{}
@@ -139,12 +136,6 @@ func NewVendorProgram(
 			return nil, fmt.Errorf("cannot have duplicate product ids in product overrides. found duplicate: %v", o.ProductId)
 		}
 		productIds = append(productIds, o.ProductId)
-		for _, opt := range o.DiscountOptions {
-			if slices.Contains(optionNames, opt.Name) {
-				return nil, fmt.Errorf("cannot have duplicate discount option names. found duplicate: %v", opt.Name)
-			}
-			optionNames = append(optionNames, opt.Name)
-		}
 	}
 
 	return &VendorProgram{
@@ -218,24 +209,27 @@ func (v *VendorProgram) UpsertProductOverrides(productOverrides []ProductOverrid
 }
 
 func (v *VendorProgram) validateDiscountOptionUniqueness() error {
-	optionNames := []string{}
-
-	for _, opt := range v.DiscountOptions {
-		if slices.Contains(optionNames, opt.Name) {
-			return fmt.Errorf("cannot have duplicate discount option names. found duplicate: %v", opt.Name)
-		}
-		optionNames = append(optionNames, opt.Name)
+	if err := validateDiscountOptionNames(v.DiscountOptions); err != nil {
+		return err
 	}
 
 	for _, o := range v.ProductOverrides {
-		for _, opt := range o.DiscountOptions {
-			if slices.Contains(optionNames, opt.Name) {
-				return fmt.Errorf("cannot have duplicate discount option name. found duplicate: %v", opt.Name)
-			}
-			optionNames = append(optionNames, opt.Name)
+		if err := validateDiscountOptionNames(o.DiscountOptions); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func validateDiscountOptionNames(options []DiscountOption) error {
+	names := make(map[string]struct{}, len(options))
+	for _, option := range options {
+		if _, exists := names[option.Name]; exists {
+			return fmt.Errorf("cannot have duplicate discount option names. found duplicate: %v", option.Name)
+		}
+		names[option.Name] = struct{}{}
+	}
 	return nil
 }
 
@@ -254,19 +248,27 @@ func (v *VendorProgram) RemoveProductOverrides(productIds []string) {
 	v.UpdatedAt = time.Now()
 }
 
-// GetDiscountOptionsForProduct returns independent copies of all vendor options,
-// followed by any additional options for the specified product.
+// GetDiscountOptionsForProduct returns independent copies of vendor options whose
+// names are not overridden, followed by the specified product's options.
 func (v *VendorProgram) GetDiscountOptionsForProduct(productId string) []DiscountOption {
-	options := []DiscountOption{}
-
-	options = append(options, v.DiscountOptions...)
-
+	productOptions := []DiscountOption{}
+	overriddenNames := make(map[string]struct{})
 	for _, override := range v.ProductOverrides {
 		if override.ProductId == productId {
-			options = append(options, override.DiscountOptions...)
+			productOptions = append(productOptions, override.DiscountOptions...)
+			for _, option := range override.DiscountOptions {
+				overriddenNames[option.Name] = struct{}{}
+			}
 		}
 	}
 
+	options := []DiscountOption{}
+	for _, option := range v.DiscountOptions {
+		if _, overridden := overriddenNames[option.Name]; !overridden {
+			options = append(options, option)
+		}
+	}
+	options = append(options, productOptions...)
 	return cloneDiscountOptions(options)
 }
 
