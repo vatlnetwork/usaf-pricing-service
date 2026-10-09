@@ -24,11 +24,17 @@ func (v *VendorProgram) CalculateDealerPrice(product Product) (float64, error) {
 	if strings.TrimSpace(product.ProductId) == "" {
 		return 0, errors.New("product id is required")
 	}
-	if strings.TrimSpace(product.Vendor) == "" {
-		return 0, errors.New("vendor is required")
-	}
-	if product.Vendor != v.Vendor {
-		return 0, errors.New("product vendor does not match vendor program")
+	if product.VendorCode != "" {
+		if strings.TrimSpace(product.VendorCode) == "" || product.VendorCode != v.VendorCode {
+			return 0, errors.New("product vendor code does not match vendor program")
+		}
+	} else {
+		if strings.TrimSpace(product.Vendor) == "" {
+			return 0, errors.New("vendor is required")
+		}
+		if product.Vendor != v.Vendor {
+			return 0, errors.New("product vendor does not match vendor program")
+		}
 	}
 	if math.IsNaN(product.QuotePrice) || math.IsInf(product.QuotePrice, 0) {
 		return 0, errors.New("quote price must be finite")

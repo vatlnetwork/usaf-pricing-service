@@ -37,10 +37,10 @@ func TestScenarioHTTPWorkflow(t *testing.T) {
 		}
 		return res.Body.Bytes()
 	}
-	program := `{"vendor":"Atosa","scenarios":[{"id":"pickup","name":"Pickup","approved":true,"adjustments":[{"type":"percentage","amount":50},{"type":"percentage","amount":5},{"type":"percentage","amount":2}],"conditions":[{"field":"fulfillment","operator":"=","value":"pickup"}]}]}`
+	program := `{"vendor":"Atosa","vendor_code":"001","scenarios":[{"id":"pickup","name":"Pickup","approved":true,"adjustments":[{"type":"percentage","amount":50},{"type":"percentage","amount":5},{"type":"percentage","amount":2}],"conditions":[{"field":"fulfillment","operator":"=","value":"pickup"}]}]}`
 	order := `{"fulfillment":"pickup","lines":[{"line_id":"a","product_id":"product","quantity":1,"price_unit":"each","list_price":1000}]}`
 	call("POST", "/vendor-programs", program, 201)
-	if len(db.program.Scenarios) != 1 || db.program.SelectionPolicy != "lowest_price" {
+	if db.program.VendorCode != "001" || len(db.program.Scenarios) != 1 || db.program.SelectionPolicy != "lowest_price" {
 		t.Fatal("scenarios not saved")
 	}
 	for _, path := range []string{"/vendor-programs/0123456789abcdef01234567/price-order", "/vendor-programs/preview"} {
@@ -68,13 +68,15 @@ func TestScenarioHTTPWorkflow(t *testing.T) {
 	}
 	before := db.calls
 	call("POST", "/vendor-programs/preview", `{"program":`+program+`,"order":`+strings.Replace(order, `"quantity":1`, `"quantity":0`, 1)+`}`, 400)
+	call("POST", "/vendor-programs/preview", `{"program":`+strings.Replace(program, `"vendor_code":"001"`, `"vendor_code":"  "`, 1)+`,"order":`+order+`}`, 400)
+	call("PUT", "/vendor-programs/0123456789abcdef01234567", strings.Replace(program, `"vendor_code":"001"`, `"vendor_code":"  "`, 1), 400)
 	call("POST", "/vendor-programs", strings.Replace(program, `"percentage"`, `"invalid"`, 1), 400)
 	call("POST", "/vendor-programs/preview", `{"program":`+program+`,"order":{"unknown":1}}`, 400)
 	if db.calls != before {
 		t.Fatal("invalid request touched persistence")
 	}
 	call("PUT", "/vendor-programs/0123456789abcdef01234567", strings.Replace(program, "Atosa", "Renamed", 1), 200)
-	if db.program.Vendor != "Renamed" || len(db.program.Scenarios) != 1 {
+	if db.program.VendorCode != "001" || db.program.Vendor != "Renamed" || len(db.program.Scenarios) != 1 {
 		t.Fatal("replacement lost scenarios")
 	}
 }

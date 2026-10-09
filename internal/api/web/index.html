@@ -15,7 +15,7 @@
     <aside aria-label="Vendor programs">
       <div class="aside-heading"><div><p class="eyebrow">DIRECTORY</p><h1>Vendor programs</h1></div><button id="refresh" class="quiet" aria-label="Refresh program list">↻</button></div>
       <button id="new-program" class="primary wide">+ New program</button>
-      <label class="search-label">Search loaded programs<input id="search" type="search" placeholder="Search vendor or ID…"></label>
+      <label class="search-label">Search loaded programs<input id="search" type="search" placeholder="Search vendor, code or ID…"></label>
       <p id="list-status" class="muted" role="status"></p>
       <nav id="program-list" aria-label="Select a vendor program"></nav>
       <button id="load-more" class="wide" hidden>Load more programs</button>
@@ -26,7 +26,7 @@
       <form id="editor" hidden>
         <div class="editor-header"><div><p class="eyebrow" id="editor-label">PROGRAM DETAILS</p><h2 id="editor-title">New program</h2><p id="metadata" class="muted"></p></div><span id="save-state" class="badge">Draft</span></div>
         <fieldset id="editor-fields">
-          <section class="panel details"><div class="section-heading"><h3>Program details</h3><span id="expiry-status" class="badge"></span></div><div class="field-grid"><label>Vendor name<input id="vendor" required placeholder="e.g. Example Vendor" autocomplete="off"></label><label>Expires at <span class="optional">(local time)</span><input id="expiry" type="datetime-local" step="0.001"><span class="help">Leave blank for no expiry. Expired programs can still be edited.</span></label></div></section>
+          <section class="panel details"><div class="section-heading"><h3>Program details</h3><span id="expiry-status" class="badge"></span></div><div class="field-grid"><label>Vendor name<input id="vendor" required placeholder="e.g. Example Vendor" autocomplete="off"></label><label>Vendor code <span class="optional">(optional)</span><input id="vendor-code" placeholder="e.g. ACME-001" autocomplete="off"><span class="help">Unique across programs. Used for pricing when supplied.</span></label><label>Expires at <span class="optional">(local time)</span><input id="expiry" type="datetime-local" step="0.001"><span class="help">Leave blank for no expiry. Expired programs can still be edited.</span></label></div></section>
           <section class="panel"><h3>Purchase pricing scenarios</h3><p class="muted">Order-aware rules for eligibility, tiers, net prices, bundles, and approved combinations. Used by order pricing; existing product pricing stays separate.</p><div id="scenarios"></div><button type="button" id="test-draft">Test this draft</button></section>
           <div class="precedence"><strong>How scopes work</strong><p>Options with the same name are replaced in this order: <b>vendor → product group → product</b>. Other options remain available. Names match exactly, including case and spaces.</p></div>
           <section class="panel scope vendor-scope" aria-labelledby="vendor-heading"><div class="section-heading"><div><p class="eyebrow">01 / BASE DISCOUNTS</p><h3 id="vendor-heading">Vendor-wide options</h3></div><span class="scope-badge">All products</span></div><p class="muted">Shared options available to every product from this vendor.</p><label class="check"><input id="vendor-quote" type="checkbox"> Allow quote pricing for all products</label><div id="vendor-options"></div></section>

@@ -10,6 +10,7 @@ import (
 )
 
 type VendorProgram struct {
+	VendorCode            string                 `json:"vendor_code" bson:"vendor_code,omitempty"`
 	Id                    string                 `json:"id" bson:"-"`
 	Vendor                string                 `json:"vendor" bson:"vendor"` // name of the vendor
 	QuoteEnabled          bool                   `json:"quote_enabled" bson:"quote_enabled"`
@@ -21,6 +22,15 @@ type VendorProgram struct {
 	UpdatedAt             time.Time              `json:"updated_at" bson:"updated_at"`
 	Scenarios             []PricingScenario      `json:"scenarios" bson:"scenarios,omitempty"`
 	SelectionPolicy       string                 `json:"selection_policy" bson:"selection_policy,omitempty"`
+}
+
+// UpdateVendorCode leaves an empty code available for legacy programs.
+func (v *VendorProgram) UpdateVendorCode(code string) error {
+	if code != "" && strings.TrimSpace(code) == "" {
+		return errors.New("vendor code must be nonblank when provided")
+	}
+	v.VendorCode = code
+	return nil
 }
 
 var ErrVendorProgramExpired = errors.New("vendor program has expired")

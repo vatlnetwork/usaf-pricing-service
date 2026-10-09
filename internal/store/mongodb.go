@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -44,7 +45,25 @@ func OpenMongoDB(ctx context.Context, cfg config.MongoDB) (*MongoDB, error) {
 		_ = client.Disconnect(cleanupCtx)
 		return nil, fmt.Errorf("connect to MongoDB: %w", err)
 	}
-	return &MongoDB{client: client, collection: client.Database(cfg.Database).Collection(cfg.Collection)}, nil
+	db := &MongoDB{client: client, collection: client.Database(cfg.Database).Collection(cfg.Collection)}
+	indexCtx, indexCancel := context.WithTimeout(ctx, cfg.OperationTimeout())
+	defer indexCancel()
+	// A partial index permits any number of legacy programs with no code.
+	// Codes remain reserved when a program expires, and concurrent writes are
+	// protected by MongoDB rather than a check-then-write race.
+	_, err = db.collection.Indexes().CreateOne(indexCtx, mongo.IndexModel{
+		Keys: bson.D{{Key: "vendor_code", Value: 1}},
+		Options: options.Index().SetName("unique_vendor_code").SetUnique(true).
+			SetCollation(&options.Collation{Locale: "simple"}).
+			SetPartialFilterExpression(bson.M{"vendor_code": bson.M{"$type": "string", "$gt": ""}}),
+	})
+	if err != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_ = client.Disconnect(cleanupCtx)
+		return nil, fmt.Errorf("create vendor code index: %w", err)
+	}
+	return db, nil
 }
 
 func (m *MongoDB) Close(ctx context.Context) error {
@@ -54,7 +73,7 @@ func (m *MongoDB) Close(ctx context.Context) error {
 func (m *MongoDB) Create(ctx context.Context, program *domain.VendorProgram) error {
 	doc := programDocument{ID: bson.NewObjectID(), Revision: 1, Program: *program}
 	if _, err := m.collection.InsertOne(ctx, doc); err != nil {
-		return err
+		return programWriteError(err)
 	}
 	program.Id = doc.ID.Hex()
 	return nil
@@ -88,8 +107,19 @@ func (m *MongoDB) Get(ctx context.Context, id string) (*domain.VendorProgram, er
 // Filter before applying the limit so expired programs cannot hide an active
 // program or cause a false ambiguity. Null also matches legacy missing fields.
 func (m *MongoDB) GetByVendor(ctx context.Context, vendor string) (*domain.VendorProgram, error) {
+	return m.getActiveProgram(ctx, "vendor", vendor)
+}
+
+func (m *MongoDB) GetByVendorCode(ctx context.Context, code string) (*domain.VendorProgram, error) {
+	if strings.TrimSpace(code) == "" {
+		return nil, ErrNotFound
+	}
+	return m.getActiveProgram(ctx, "vendor_code", code)
+}
+
+func (m *MongoDB) getActiveProgram(ctx context.Context, field, value string) (*domain.VendorProgram, error) {
 	filter := bson.M{
-		"vendor": vendor,
+		field: value,
 		"$or": bson.A{
 			bson.M{"expires_at": nil},
 			bson.M{"expires_at": bson.M{"$gt": time.Now()}},
@@ -146,7 +176,7 @@ func (m *MongoDB) Update(ctx context.Context, id string, mutate func(*domain.Ven
 	doc.Revision++
 	result, err := m.collection.ReplaceOne(ctx, filter, doc)
 	if err != nil {
-		return nil, err
+		return nil, programWriteError(err)
 	}
 	if result.MatchedCount == 0 {
 		return nil, ErrConflict
@@ -167,4 +197,11 @@ func (m *MongoDB) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func programWriteError(err error) error {
+	if mongo.IsDuplicateKeyError(err) {
+		return ErrDuplicateVendorCode
+	}
+	return err
 }

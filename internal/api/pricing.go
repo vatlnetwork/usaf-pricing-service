@@ -12,6 +12,7 @@ import (
 )
 
 type priceProductRequest struct {
+	VendorCode      string   `json:"vendorCode"`
 	ProductID       string   `json:"productId"`
 	GroupName       string   `json:"groupName"`
 	Vendor          string   `json:"vendor"`
@@ -51,22 +52,40 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 		program *domain.VendorProgram
 		reason  string
 	}
-	cache := make(map[string]vendorLookup)
+	type lookupKey struct {
+		byCode bool
+		value  string
+	}
+	cache := make(map[lookupKey]vendorLookup)
 	results := make(map[string]dealerPriceResult, len(*products))
 	for _, input := range *products {
-		if strings.TrimSpace(input.Vendor) == "" {
+		if input.VendorCode == "" && strings.TrimSpace(input.Vendor) == "" {
 			results[input.ProductID] = unavailablePrice("vendor is required")
 			continue
 		}
-		lookup, exists := cache[input.Vendor]
+		if input.VendorCode != "" && strings.TrimSpace(input.VendorCode) == "" {
+			results[input.ProductID] = unavailablePrice("vendor code must be nonblank when provided")
+			continue
+		}
+		key := lookupKey{value: input.Vendor}
+		label := input.Vendor
+		if input.VendorCode != "" {
+			key = lookupKey{byCode: true, value: input.VendorCode}
+			label = "code " + input.VendorCode
+		}
+		lookup, exists := cache[key]
 		if !exists {
-			lookup.program, err = a.programs.GetByVendor(r.Context(), input.Vendor)
+			if key.byCode {
+				lookup.program, err = a.programs.GetByVendorCode(r.Context(), key.value)
+			} else {
+				lookup.program, err = a.programs.GetByVendor(r.Context(), key.value)
+			}
 			if err != nil {
 				switch {
 				case errors.Is(err, store.ErrNotFound):
-					lookup.reason = fmt.Sprintf("vendor program for %s is missing", input.Vendor)
+					lookup.reason = fmt.Sprintf("vendor program for %s is missing", label)
 				case errors.Is(err, store.ErrAmbiguousVendor):
-					lookup.reason = fmt.Sprintf("multiple vendor programs found for vendor %s", input.Vendor)
+					lookup.reason = fmt.Sprintf("multiple vendor programs found for vendor %s", label)
 				case errors.Is(err, context.DeadlineExceeded):
 					lookup.reason = "vendor program lookup timed out"
 				case errors.Is(err, context.Canceled):
@@ -76,7 +95,7 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 					a.logger.Error("pricing vendor lookup failed", "vendor", input.Vendor, "error", err)
 				}
 			}
-			cache[input.Vendor] = lookup
+			cache[key] = lookup
 		}
 		if lookup.reason != "" {
 			results[input.ProductID] = unavailablePrice(lookup.reason)
@@ -95,7 +114,7 @@ func (a *API) dealerPrices(w http.ResponseWriter, r *http.Request) error {
 			listPrice = *input.ListPrice
 		}
 		price, err := lookup.program.CalculateDealerPrice(domain.Product{
-			ProductId: input.ProductID, GroupName: input.GroupName, Vendor: input.Vendor, ListPrice: listPrice, QuotePrice: input.QuotePrice, DiscountOptions: input.DiscountOptions,
+			VendorCode: input.VendorCode, ProductId: input.ProductID, GroupName: input.GroupName, Vendor: input.Vendor, ListPrice: listPrice, QuotePrice: input.QuotePrice, DiscountOptions: input.DiscountOptions,
 		})
 		if err != nil {
 			results[input.ProductID] = unavailablePrice(err.Error())

@@ -99,6 +99,6 @@ window.PricingForms = (() => {
     container.append(button('+ Add pricing scenario',()=>{program.scenarios.push({id:crypto.randomUUID(),name:'',method:'steps',price_unit:'each',approved:false,scope:{},conditions:[],adjustments:[]});changed();render(container,program,changed);container.lastElementChild.previousElementSibling.scrollIntoView({block:'nearest'});}));
   }
   function localDate(value) { if (!value) return ''; const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19); }
-  function programPayload(p) { const keys=['vendor','expires_at','quote_enabled','discount_options','product_overrides','product_group_overrides','scenarios','selection_policy'];return Object.fromEntries(keys.filter(k=>p[k]!==undefined).map(k=>[k,p[k]])); }
+  function programPayload(p) { const keys=['vendor','vendor_code','expires_at','quote_enabled','discount_options','product_overrides','product_group_overrides','scenarios','selection_policy'];return Object.fromEntries(keys.filter(k=>p[k]!==undefined).map(k=>[k,p[k]])); }
   return {el,button,field,grid,choices,render,localDate,programPayload};
 })();

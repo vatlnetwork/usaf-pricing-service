@@ -1,6 +1,7 @@
 package domain
 
 type Product struct {
+	VendorCode      string   `json:"vendorCode,omitempty"`
 	ProductId       string   `json:"productId"`
 	GroupName       string   `json:"groupName"`
 	Vendor          string   `json:"vendor"`

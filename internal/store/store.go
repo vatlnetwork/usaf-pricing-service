@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	ErrNotFound        = errors.New("vendor program not found")
-	ErrInvalidID       = errors.New("vendor program id must be a 24-character hexadecimal MongoDB ObjectID")
-	ErrConflict        = errors.New("vendor program changed during the update; reload and retry")
-	ErrAmbiguousVendor = errors.New("multiple vendor programs found for vendor")
+	ErrDuplicateVendorCode = errors.New("vendor code is already assigned to another program")
+	ErrNotFound            = errors.New("vendor program not found")
+	ErrInvalidID           = errors.New("vendor program id must be a 24-character hexadecimal MongoDB ObjectID")
+	ErrConflict            = errors.New("vendor program changed during the update; reload and retry")
+	ErrAmbiguousVendor     = errors.New("multiple vendor programs found for vendor")
 )
 
 type VendorPrograms interface {
@@ -19,6 +20,8 @@ type VendorPrograms interface {
 	Get(context.Context, string) (*domain.VendorProgram, error)
 	// GetByVendor considers only programs whose expiry has not been reached.
 	GetByVendor(context.Context, string) (*domain.VendorProgram, error)
+	// GetByVendorCode matches an exact, nonempty code on an unexpired program.
+	GetByVendorCode(context.Context, string) (*domain.VendorProgram, error)
 	List(ctx context.Context, limit, offset int64) ([]domain.VendorProgram, error)
 	// Update commits the mutation only when it succeeds and the stored version
 	// has not changed. The callback must not retain the supplied program.

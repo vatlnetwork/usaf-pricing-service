@@ -58,7 +58,7 @@
   async function loadPrograms(reset=false) {
     $('more-programs').disabled=true;$('reload-programs').disabled=true;
     try{if(reset){offset=0;saved=[];}const page=(await request(`/vendor-programs?limit=100&offset=${offset}`)) || [];offset+=page.length;saved.push(...page);hasMore=page.length===100;
-      const selected=$('saved-program').value;const first=el('option','Select a saved program…');first.value='';$('saved-program').replaceChildren(first);for(const p of saved){const option=el('option',`${p.vendor} · ${p.id}`);option.value=p.id;$('saved-program').append(option);}$('saved-program').value=selected;$('more-programs').hidden=!hasMore;
+      const selected=$('saved-program').value;const first=el('option','Select a saved program…');first.value='';$('saved-program').replaceChildren(first);for(const p of saved){const option=el('option',`${p.vendor}${p.vendor_code ? ' · ' + p.vendor_code : ''} · ${p.id}`);option.value=p.id;$('saved-program').append(option);}$('saved-program').value=selected;$('more-programs').hidden=!hasMore;
     }catch(error){message('Saved programs could not be loaded: '+error.message+'. Tutorial examples remain available.',true);}finally{$('more-programs').disabled=false;$('reload-programs').disabled=false;}
   }
 

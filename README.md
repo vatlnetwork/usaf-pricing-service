@@ -2,6 +2,8 @@
 
 An unauthenticated JSON HTTP API and browser interface for vendor programs and purchase-order pricing scenarios, backed by MongoDB. Domain validation lives in `domain/vendor_program.go` and `domain/scenario.go`; order pricing lives in `domain/order_pricing.go`.
 
+For the experimental deployment, see the [Vendor import agent guide](docs/vendor-program-agent-guide.md): a standalone endpoint and field reference with import instructions, complete preview examples, and update/retry behavior.
+
 ## Configure and run
 
 1. Start MongoDB or use an existing MongoDB deployment.
@@ -48,6 +50,7 @@ All paths below are relative to `http://localhost:8080`. Send JSON request bodie
 | `POST` | `/vendor-programs` | Create a program; see example below |
 | `GET` | `/vendor-programs?limit=100&offset=0` | List programs ordered by MongoDB ID; limit 1–1000, offset ≥ 0 |
 | `GET` | `/vendor-programs/{id}` | Read a program |
+| `GET` | `/vendor-programs/by-code/{vendorCode}` | Read an unexpired program by exact vendor code; URL-encode the code |
 | `PUT` | `/vendor-programs/{id}` | Replace all editable fields using the create payload; optional `expected_updated_at` rejects stale edits with `409` |
 | `DELETE` | `/vendor-programs/{id}` | Delete a program |
 | `PUT` | `/vendor-programs/{id}/expiry` | `{"expires_at":"2030-01-01T00:00:00Z"}` sets expiry; `{"expires_at":null}` clears it |
@@ -59,6 +62,8 @@ All paths below are relative to `http://localhost:8080`. Send JSON request bodie
 | `DELETE` | `/vendor-programs/{id}/product-group-overrides` | `RemoveProductGroupOverrides`: `{"group_names":["Kitchen"]}` removes selected group overrides |
 | `GET` | `/vendor-programs/{id}/products/{productID}/discount-options?group_name=Kitchen` | Return effective options with product > product group > vendor precedence; `group_name` is optional |
 | `POST` | `/products/dealer-prices` | Calculate prices for a JSON array of products; see batch pricing below |
+
+Programs accept an optional string `vendor_code` (Go field `VendorCode`) on create, replacement, and preview. Nonempty codes must be unique across all programs, including expired programs; duplicate creates or updates return `409`. Matching is exact, including case and whitespace; whitespace-only codes are invalid. Omitted or empty codes keep name-only programs working. Whole-program PUT clears the code when omitted or empty, so include the existing code when replacing a program. Focused updates preserve it. Startup creates a partial unique MongoDB index; preexisting duplicate nonempty codes must be resolved before startup can succeed. Vendor names continue to allow duplicates, with ambiguous active names rejected during pricing.
 
 Program IDs are MongoDB ObjectIDs represented as 24 hexadecimal characters. Product IDs are application strings, not MongoDB ObjectIDs; URL-encode them when using them in paths. The product lookup operates within the specified vendor program and does not require a stored product record. Supply the product's group through the optional `group_name` query parameter (URL-encoded); without it, only vendor and product options are considered.
 
@@ -207,6 +212,14 @@ Response (`200 OK`):
 Without an accepted quote or positive net price override, the calculation starts with `listPrice`, applies selected options in the order supplied, and applies each option's discount path in order. Percentages reduce the current price; dollar amounts are subtracted from it. Only selected options are applied. Options are resolved from the vendor-wide options, overrides for the product's `groupName`, and overrides for that exact product, with product overrides taking highest priority. Only the winning option is applied when its name is selected. `groupName` is optional; an omitted, empty, or unmatched group name contributes no group options. Repeating an option in the selection applies it again.
 
 The calculation stops at zero and never returns a negative price. Decimal arithmetic preserves intermediate precision; only the final price is rounded to two decimals, with half cents rounding up. For example, `$100` minus `10%` then `$5` is `$85.00`. All selected options are checked before calculation, so a missing option produces an error even if an earlier discount would have reached zero.
+
+Batch pricing accepts `vendorCode` as an alternative to `vendor`, for example:
+
+```json
+[{"productId":"product-123","vendorCode":"ACME-001","listPrice":100,"discountOptions":["Standard"]}]
+```
+
+When a nonempty `vendorCode` is supplied, it selects the program even if `vendor` is missing or spelled differently. An unknown or expired code returns `Unavailable` without falling back to the name. Without a code, the existing name lookup applies. Each distinct code or name is looked up once per request.
 
 Vendor, group, and option names match exactly, including case and whitespace. A missing active vendor program, multiple active programs for the same vendor, a missing selected option, missing/invalid product data, or a database lookup failure produces an `Unavailable` result for the affected product. Other products still receive their results. Database error details are logged rather than exposed. Each distinct vendor is looked up once per request.
 
@@ -359,3 +372,51 @@ Program-wide `selection_policy`:
 `selected_scenario_ids` restricts candidate rules. Every selected rule must be used; dependencies are included automatically and should not be selected separately for the same lines. Selection never bypasses eligibility, approval, or combination restrictions. Complex overlapping alternatives have a 20,000-state search limit; exceeding it returns a review reason instead of a partial or arbitrary answer. Programs support up to 2,000 scenarios, each with up to 50 conditions and 50 adjustment steps.
 
 Whole-program PUT replaces scenarios along with existing editable fields. Omitting `scenarios` clears them; omitting `selection_policy` resets it to `lowest_price`. Existing focused discount/override/expiry endpoints preserve scenarios. Use `expected_updated_at` for optimistic concurrency as before. No data migration or store-interface changes are required; old MongoDB documents without these fields remain valid.
+
+## Imported mockup vendors
+
+The import in `imports/kyle-vendors-2026-10-08/` contains all 256 Purchase Scenarios rows for the seven vendors in Kyle's mockup:
+
+| Vendor | Scenarios | Enabled from workbook terms | Review required |
+| --- | ---: | ---: | ---: |
+| Atosa | 2 | 2 | 0 |
+| BK Resources | 6 | 6 | 0 |
+| Quantum | 6 | 3 | 3 |
+| Globe | 85 | 5 | 80 |
+| Dormont | 7 | 1 | 6 |
+| Robot Coupe | 131 | 1 | 130 |
+| Pitco | 19 | 4 | 15 |
+
+The import retains every source row, numerical term, eligibility note, date, promo code, and source-cell reference. The workbook's confirmation-required rows remain unapproved. Three rows are `review` methods because their rate or complete bundle components are missing: Globe accessories with equipment, Robot Coupe's disc display, and the R2FIVE/bowl-kit bundle. Their stated prices and terms remain in the scenario instructions; no fabricated accessory IDs or tutorial net prices were imported.
+
+`programs.json` contains API create payloads; `source-rows.json` preserves the original selected cells; `manifest.json` maps all rows to stable scenario IDs and records the source checksum and date policy. `before.json` is the pre-import API snapshot, `receipt.json` identifies the saved records, and `verification-*.json` records the live API checks. Saved-program snapshots are also retained.
+
+Open `/test`, refresh the saved-program list, and select a vendor. These imports use the order-pricing scenarios, not the legacy discount-option endpoint. Category-only rows use the workbook's exact group labels; the service has no product catalog from which to infer category membership. Examples include `Regular products outside special categories` for BK, `Globe regular equipment` or `Parts` for Globe, and `Regular Pitco products` or `Perfect Fry` for Pitco. Exact source SKUs remain exact (including spaces and configurations in the SKU text). `Globe slicers` is an explicit classification alias for counted slicers; four known slicer IDs from the source also count directly.
+
+Several source restrictions require caller-provided evidence:
+
+- BK online pricing: `channel: online`, plus `attributes.bk_cart_promo_verified: "true"`.
+- Quantum: each line's `net_price` supplies the **net threshold basis**, and `attributes.quantum_net_threshold_verified: "true"` confirms it. The price itself is calculated from `list_price`.
+- Essentials-column pricing: the line's `net_price` is the published column **before** the 15% deduction; set line attribute `essentials_column_verified: "true"`.
+- Pitco buy-12/get-1: group `Eligible fryers`, exactly 13 units, verified standard `net_price` values, `shipment: immediate`, and order attributes `pitco_standard_terms_verified: "true"`, `pitco_promotion_eligible: "true"`, `other_promotions: "false"`.
+
+The workbook displays calendar dates despite fractional Excel serials. They are imported as Mountain Time calendar days: start at local midnight and end at the next local midnight after the last stated day. Missing dates stay missing and retain the source's review requirement.
+
+Rebuild the reviewed mapping without database writes:
+
+```sh
+python scripts/import_mockup_vendors.py \
+  --xlsx '/path/to/Vendor Purchase Price Scenarios.xlsx' \
+  --output-dir imports/kyle-vendors-2026-10-08
+```
+
+Add `--apply --api http://127.0.0.1:8080` to import. All payloads are validated before any writes. Vendor matches are exact, unrelated scenarios and records are preserved, existing records use `expected_updated_at`, and identical reruns do not write or create duplicates. Conflicting saved scenario edits stop the import rather than being overwritten. The first pre-import snapshot is retained.
+
+Validate mappings and the running service:
+
+```sh
+python -m unittest discover -s scripts -p 'test_import*.py'
+python scripts/verify_mockup_import.py --output-dir imports/kyle-vendors-2026-10-08 --saved
+```
+
+The verification script only reads or prices data. It also tests two unapproved promotions in temporary preview copies to check their arithmetic; it never approves those saved records.

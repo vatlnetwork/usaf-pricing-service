@@ -92,7 +92,7 @@ const mayDiscard = () => !state.dirty || confirmAction('Discard unsaved changes?
 function expired(program) { return program.expires_at && new Date(program.expires_at) <= new Date(); }
 function renderList() {
   const query = $('search').value.toLowerCase();
-  const matches = state.programs.filter((program) => `${program.vendor} ${program.id}`.toLowerCase().includes(query));
+  const matches = state.programs.filter((program) => `${program.vendor} ${program.vendor_code || ''} ${program.id}`.toLowerCase().includes(query));
   $('program-list').replaceChildren();
   for (const program of matches) {
     const item = button('', () => run(async () => {
@@ -101,7 +101,7 @@ function renderList() {
       openProgram(loaded);
       notice();
     }), 'program-item');
-    item.append(node('span', '', program.vendor), node('small', '', `${expired(program) ? 'Expired' : 'Active'} · ${(program.scenarios || []).length} scenarios · ${(program.discount_options || []).length} vendor options`));
+    item.append(node('span', '', program.vendor), node('small', '', `${program.vendor_code ? program.vendor_code + ' · ' : ''}${expired(program) ? 'Expired' : 'Active'} · ${(program.scenarios || []).length} scenarios · ${(program.discount_options || []).length} vendor options`));
     item.setAttribute('aria-current', String(state.selected?.id === program.id));
     $('program-list').append(item);
   }
@@ -192,7 +192,7 @@ function localDate(iso) {
 }
 function openProgram(program) {
   state.selected = program ? structuredClone(program) : null;
-  state.draft = program ? structuredClone(program) : { vendor: '', quote_enabled: false, expires_at: null, discount_options: [], product_overrides: [], product_group_overrides: [] };
+  state.draft = program ? structuredClone(program) : { vendor: '', vendor_code: '', quote_enabled: false, expires_at: null, discount_options: [], product_overrides: [], product_group_overrides: [] };
   const draft = state.draft;
   draft.discount_options ||= [];
   draft.product_overrides ||= [];
@@ -209,6 +209,7 @@ function openProgram(program) {
   $('metadata').textContent = program ? `ID ${program.id} · Updated ${new Date(program.updated_at).toLocaleString()}` : 'Set up shared discounts, then add more specific overrides.';
   $('save-state').textContent = program ? 'Saved' : 'Draft';
   $('vendor').value = draft.vendor;
+  $('vendor-code').value = draft.vendor_code || '';
   $('expiry').value = localDate(draft.expires_at);
   $('vendor-quote').checked = draft.quote_enabled;
   $('expiry-status').textContent = expired(draft) ? 'Expired' : draft.expires_at ? 'Expiry scheduled' : 'No expiry';
@@ -235,6 +236,7 @@ function validateDraft() {
   }
 }
 $('vendor').addEventListener('input', () => { state.draft.vendor = $('vendor').value; markDirty(); });
+$('vendor-code').addEventListener('input', () => { state.draft.vendor_code = $('vendor-code').value; markDirty(); });
 $('vendor-quote').addEventListener('change', () => { state.draft.quote_enabled = $('vendor-quote').checked; markDirty(); });
 $('expiry').addEventListener('input', () => {
   state.draft.expires_at = $('expiry').value ? new Date($('expiry').value).toISOString() : null;

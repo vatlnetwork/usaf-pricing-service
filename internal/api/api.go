@@ -35,6 +35,7 @@ func NewHandler(programs store.VendorPrograms, timeout time.Duration, logger *sl
 	mux.HandleFunc("POST /vendor-programs/{id}/price-order", a.handle(a.priceOrder))
 	mux.HandleFunc("POST /vendor-programs", a.handle(a.create))
 	mux.HandleFunc("GET /vendor-programs", a.handle(a.list))
+	mux.HandleFunc("GET /vendor-programs/by-code/{vendorCode}", a.handle(a.getByVendorCode))
 	mux.HandleFunc("GET /vendor-programs/{id}", a.handle(a.get))
 	mux.HandleFunc("PUT /vendor-programs/{id}", a.handle(a.replace))
 	mux.HandleFunc("DELETE /vendor-programs/{id}", a.handle(a.delete))
@@ -82,7 +83,7 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, message = http.StatusNotFound, err.Error()
 	case errors.Is(err, domain.ErrVendorProgramExpired):
 		status, message = http.StatusNotFound, err.Error()
-	case errors.Is(err, store.ErrConflict):
+	case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrDuplicateVendorCode):
 		status, message = http.StatusConflict, err.Error()
 	case errors.Is(err, context.DeadlineExceeded):
 		status, message = http.StatusGatewayTimeout, "database operation timed out"
@@ -135,6 +136,7 @@ func bodyError(err error) error {
 }
 
 type programInput struct {
+	VendorCode            string                        `json:"vendor_code"`
 	Scenarios             []domain.PricingScenario      `json:"scenarios"`
 	SelectionPolicy       string                        `json:"selection_policy"`
 	Vendor                string                        `json:"vendor"`
@@ -152,6 +154,9 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	program, err := domain.NewVendorProgram(body.Vendor, body.DiscountOptions, body.ProductOverrides, body.ProductGroupOverrides)
 	if err != nil {
+		return badRequest(err.Error())
+	}
+	if err := program.UpdateVendorCode(body.VendorCode); err != nil {
 		return badRequest(err.Error())
 	}
 	if err := program.UpdateScenarios(body.Scenarios, body.SelectionPolicy); err != nil {
@@ -183,6 +188,9 @@ func (a *API) replace(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest(err.Error())
 	}
+	if err := candidate.UpdateVendorCode(body.VendorCode); err != nil {
+		return badRequest(err.Error())
+	}
 	if err := candidate.UpdateScenarios(body.Scenarios, body.SelectionPolicy); err != nil {
 		return badRequest(err.Error())
 	}
@@ -209,6 +217,19 @@ func (a *API) replace(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) get(w http.ResponseWriter, r *http.Request) error {
 	program, err := a.programs.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, program)
+	return nil
+}
+
+func (a *API) getByVendorCode(w http.ResponseWriter, r *http.Request) error {
+	code := r.PathValue("vendorCode")
+	if strings.TrimSpace(code) == "" {
+		return badRequest("vendor code must be nonblank")
+	}
+	program, err := a.programs.GetByVendorCode(r.Context(), code)
 	if err != nil {
 		return err
 	}

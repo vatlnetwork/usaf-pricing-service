@@ -36,6 +36,9 @@ func (a *API) previewOrder(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest(err.Error())
 	}
+	if err = program.UpdateVendorCode(body.Program.VendorCode); err != nil {
+		return badRequest(err.Error())
+	}
 	if err = program.UpdateScenarios(body.Program.Scenarios, body.Program.SelectionPolicy); err != nil {
 		return badRequest(err.Error())
 	}
